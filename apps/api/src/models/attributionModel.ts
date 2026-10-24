@@ -15,11 +15,15 @@ export function createAttribution(attribution: Attribution): void {
       `INSERT INTO attributions (
         attribution_id, loop_id, anon_user_id, mistake_id,
         cause, knowledge_point, essence, attr_model_version, attr_latency_ms,
-        rate_action, inaccurate_reason, expert_consistency, expert_accuracy
+        rate_action, inaccurate_reason, expert_consistency, expert_accuracy,
+        knowledge_point_id, cause_id, kq_taxonomy_version, cause_taxonomy_version,
+        is_mock, is_internal
       ) VALUES (
         @attribution_id, @loop_id, @anon_user_id, @mistake_id,
         @cause, @knowledge_point, @essence, @attr_model_version, @attr_latency_ms,
-        @rate_action, @inaccurate_reason, @expert_consistency, @expert_accuracy
+        @rate_action, @inaccurate_reason, @expert_consistency, @expert_accuracy,
+        @knowledge_point_id, @cause_id, @kq_taxonomy_version, @cause_taxonomy_version,
+        @is_mock, @is_internal
       )`
     )
     .run(attribution);

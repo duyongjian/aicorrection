@@ -51,6 +51,18 @@ export interface Attribution {
   inaccurate_reason: InaccurateReason | null;
   expert_consistency: 'agree' | 'disagree' | null;
   expert_accuracy: 'accurate' | 'inaccurate' | null;
+  /** J8: 结构化知识点对应 ID（受控词表 kp_*） */
+  knowledge_point_id: string | null;
+  /** J8: 结构化归因类型（受控词表 cause_*） */
+  cause_id: string | null;
+  /** J8: 知识点分类法版本 */
+  kq_taxonomy_version: string;
+  /** J8: 归因分类法版本 */
+  cause_taxonomy_version: string;
+  /** T4: 是否使用 mock provider 生成 */
+  is_mock: number;
+  /** T4: 是否内部账号 */
+  is_internal: number;
   created_at: string;
 }
 
@@ -83,6 +95,10 @@ export interface AnalyticsEvent {
   ts_utc: string;
   idempotency_key: string | null;
   received_at: string;
+  /** T4: 是否使用 mock provider 生成 */
+  is_mock: number;
+  /** T4: 是否内部账号 */
+  is_internal: number;
 }
 
 // ===================== 统一响应信封 =====================

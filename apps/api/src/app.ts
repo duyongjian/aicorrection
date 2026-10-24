@@ -9,6 +9,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { env } from './config/env';
+import { metadataMiddleware } from './middleware/metadata';
 
 // ESM 下 __dirname 不存在，以 import.meta.url 推导
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,6 +31,8 @@ export function createApp() {
   app.use(cors());
   if (env.NODE_ENV !== 'test') app.use(morgan('dev'));
   app.use(express.json({ limit: '15mb' }));
+  // T4: metadata 中间件 — 注入 is_internal / channel / utm 到每个请求
+  app.use(metadataMiddleware);
 
   const base = env.API_BASE_PATH;
 

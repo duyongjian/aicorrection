@@ -18,6 +18,7 @@ import { useLoop } from '../hooks/useLoop';
 import { useDraft, type Draft } from '../hooks/useDraft';
 import DraftRestore from '../components/DraftRestore';
 import { describeError } from '../api/client';
+import { tracker } from '../tracking/sdk';
 
 /** R01 上传：拍照 / 文本 / 粘贴 + 草稿恢复（UPL-01） */
 export default function UploadPage() {
@@ -34,6 +35,8 @@ export default function UploadPage() {
 
   useEffect(() => {
     void loadDrafts();
+    // T2: screen_view 埋点 — 上传页
+    tracker.screenView('upload');
   }, [loadDrafts]);
 
   const submit = async (): Promise<void> => {

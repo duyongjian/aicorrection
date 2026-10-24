@@ -1,0 +1,23 @@
+{
+  "version": "v0.1",
+  "cause_ids": [
+    "concept_confusion",
+    "method_error",
+    "calculation_error",
+    "reading_error",
+    "memory_gap",
+    "other"
+  ],
+  "kp_examples": [
+    "kp_derivative_monotonicity",
+    "kp_integral_geometry",
+    "kp_limit_continuity",
+    "kp_series_convergence",
+    "kp_matrix_determinant",
+    "kp_probability_conditional",
+    "kp_english_tense",
+    "kp_grammar_clause",
+    "kp_politics_philosophy",
+    "kp_logic_argument"
+  ]
+}

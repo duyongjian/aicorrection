@@ -2,6 +2,7 @@
  * 归因服务（ATT-01 / ATT-02）
  * 三项生成 + 超时降级（status:'analyzing'）+ 缺项判定（status:'incomplete'）。
  * 注：降级态以 HTTP 200 + data.status 表达（前后端一致，见 §7.6 取舍说明）。
+ * T4: 当 provider 为 mock 或 fallback 时，打标 is_mock=true。
  */
 import { getProvider } from '../llm';
 import { MockProvider } from '../llm/mockProvider';
@@ -25,6 +26,7 @@ export interface AttrInput {
   question: string;
   user_answer?: string;
   mistake_id?: string | null;
+  is_internal?: boolean;
 }
 
 export async function generateAttribution(
@@ -42,6 +44,8 @@ export async function generateAttribution(
   let modelVersion =
     provider.name === 'mock' ? MOCK_ATTR_MODEL_VERSION : (provider.name ?? 'unknown');
   let usedFallback = false;
+  /** 是否本次使用了 mock provider（含 fallback） */
+  let isMock = provider.name === 'mock';
 
   /** 运行时 Mock 兜底：真实模型不可用/超时/输出不合格式时，保证无可用模型也能跑通闭环。 */
   const fallbackToMock = async (): Promise<boolean> => {
@@ -54,6 +58,7 @@ export async function generateAttribution(
     latencyMs = r.latencyMs;
     modelVersion = `${MOCK_ATTR_MODEL_VERSION}-fallback`;
     usedFallback = true;
+    isMock = true;
     return true;
   };
 
@@ -98,6 +103,12 @@ export async function generateAttribution(
     inaccurate_reason: null,
     expert_consistency: null,
     expert_accuracy: null,
+    knowledge_point_id: null,
+    cause_id: null,
+    kq_taxonomy_version: 'v0.1',
+    cause_taxonomy_version: 'v0.1',
+    is_mock: isMock ? 1 : 0,
+    is_internal: input.is_internal ? 1 : 0,
     created_at: new Date().toISOString(),
   });
 

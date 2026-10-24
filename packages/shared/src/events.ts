@@ -4,6 +4,24 @@
  */
 import type { Segment, Platform, ExpGroup } from './constants';
 
+/** 渠道来源 */
+export const CHANNELS = ['organic', 'referral', 'app_store', 'web', 'qr'] as const;
+export type Channel = (typeof CHANNELS)[number];
+
+/** ScreenView 页面枚举（§13 K1.2b） */
+export const SCREEN_VIEW_PAGES = [
+  'upload',       // P0: 上传页（激活）
+  'attr_show',    // P0: 归因展示页（激活）
+  'followup',     // P0: 追问页（激活，与 attr_show 同页共享）
+  'practice',     // P1: 练习页（PENDING）
+  'restate',      // P1: 复述页（PENDING）
+  'verify',       // P1: 验证页（PENDING）
+  'review',       // P2: 复习页（PENDING）
+  'dashboard',    // P2: 看板页（PENDING）
+  'other',        // 兜底
+] as const;
+export type ScreenViewPage = (typeof SCREEN_VIEW_PAGES)[number];
+
 /** 全局 Context（每个事件必带） */
 export interface TrackContext {
   app_version: string;
@@ -17,6 +35,16 @@ export interface TrackContext {
   event_seq: number; // 同 loop 内事件序号（无 loop 默认 1）
   exp_id?: string;
   exp_group: ExpGroup;
+  /** 推荐渠道来源（organic/referral/app_store/web/qr 等） */
+  channel?: Channel;
+  /** UTM 参数：来源 */
+  utm_source?: string;
+  /** UTM 参数：活动 */
+  utm_campaign?: string;
+  /** 是否内部账号（服务端注入） */
+  is_internal?: boolean;
+  /** 是否 mock 模式（服务端注入） */
+  is_mock?: boolean;
 }
 
 /** 事件信包 */

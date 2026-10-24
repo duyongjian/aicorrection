@@ -11,12 +11,14 @@ import {
   makeLoopAttrShow,
   makeAttrRate,
   makeFollowup,
+  screenView,
 } from './events';
 import type {
   LoopUploadProps,
   LoopAttrShowProps,
   AttrRateProps,
   FollowupProps,
+  ScreenViewPage,
 } from '@aicorrection/shared';
 import { api } from '../api/client';
 
@@ -71,6 +73,16 @@ export const tracker = {
 
   followup(props: FollowupProps, loopId: string, eventSeq: number): void {
     queue.push(makeFollowup(props, loopId, eventSeq));
+    scheduleFlush();
+  },
+
+  /**
+   * screen_view 事件上报
+   * @param screenName 页面名称
+   * @param enterTs 进入时间（ISO8601），不传则用当前时间
+   */
+  screenView(screenName: ScreenViewPage, enterTs?: string): void {
+    queue.push(screenView(screenName, enterTs));
     scheduleFlush();
   },
 

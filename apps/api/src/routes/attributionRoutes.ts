@@ -19,7 +19,10 @@ const schema = z.object({
 
 router.post('/', validateBody(schema), async (req, res, next) => {
   try {
-    const data = await generateAttribution(req.body);
+    const data = await generateAttribution({
+      ...req.body,
+      is_internal: req.is_internal ?? false,
+    });
     res.json(ok(data));
   } catch (e) {
     next(e);

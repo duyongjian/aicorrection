@@ -11,10 +11,12 @@ export function insertEvent(event: AnalyticsEvent): boolean {
     .prepare(
       `INSERT OR IGNORE INTO analytics_events (
         event_id, event_name, anon_user_id, loop_id, session_id,
-        context_json, props_json, ts_utc, idempotency_key, received_at
+        context_json, props_json, ts_utc, idempotency_key, received_at,
+        is_mock, is_internal
       ) VALUES (
         @event_id, @event_name, @anon_user_id, @loop_id, @session_id,
-        @context_json, @props_json, @ts_utc, @idempotency_key, @received_at
+        @context_json, @props_json, @ts_utc, @idempotency_key, @received_at,
+        @is_mock, @is_internal
       )`
     )
     .run(event);

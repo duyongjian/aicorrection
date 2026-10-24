@@ -7,6 +7,7 @@ import RateActions from '../components/RateActions';
 import FollowupPanel from '../components/FollowupPanel';
 import AnalyzingState from '../components/AnalyzingState';
 import OcrFeedback from '../components/OcrFeedback';
+import { tracker } from '../tracking/sdk';
 
 type Status = 'idle' | 'loading' | 'ok' | 'analyzing' | 'incomplete' | 'error';
 
@@ -25,6 +26,8 @@ export default function AttributionPage() {
       navigate('/');
       return;
     }
+    // T2: screen_view 埋点 — 归因页（screenName='attr_show'，与 followup 同页区分）
+    tracker.screenView('attr_show');
     if (!attribution) {
       setStatus('loading');
       runAttribution()

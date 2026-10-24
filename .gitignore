@@ -9,8 +9,14 @@ build/
 # Local data (SQLite + uploads) — never commit
 apps/api/data/*.db
 apps/api/data/*.db-journal
+apps/api/data/*.db-wal
 apps/api/data/uploads/
 apps/api/.env
+
+# Env files
+.env
+.env.local
+.env.*.local
 
 # Logs
 *.log
@@ -20,3 +26,6 @@ npm-debug.log*
 .vscode/
 .idea/
 .DS_Store
+
+# Next.js (if any adjacent project)
+.next/
