@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Local data (SQLite + uploads) — never commit
+apps/api/data/*.db
+apps/api/data/*.db-journal
+apps/api/data/uploads/
+apps/api/.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor
+.vscode/
+.idea/
+.DS_Store

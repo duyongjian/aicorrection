@@ -1,0 +1,43 @@
+classDiagram
+  %% 实体
+  class User { +anon_user_id +segment +exp_group +register_ts }
+  class Mistake { +mistake_id +loop_id +src_type +ocr_status +mistake_ref }
+  class Attribution { +attribution_id +loop_id +cause +knowledge_point +essence +rate_action +expert_accuracy }
+  class LoopSession { +loop_id +anon_user_id +followup_rounds +loop_complete }
+  class AnalyticsEvent { +event_id +event_name +idempotency_key +context_json +props_json }
+
+  User "1" --> "0..*" Mistake
+  User "1" --> "0..*" LoopSession
+  LoopSession "1" --> "1" Mistake
+  LoopSession "1" --> "1" Attribution
+  Mistake "1" --> "1" Attribution
+
+  %% LLM 抽象层
+  class LlmProvider {
+    <<interface>>
+    +chat(messages, opts) Promise~LlmResult~
+    +chatWithImage(imgB64, prompt, opts) Promise~LlmResult~
+    +isAvailable() Promise~boolean~
+  }
+  class OllamaProvider
+  class MockProvider
+  LlmProvider <|.. OllamaProvider
+  LlmProvider <|.. MockProvider
+
+  %% 服务
+  class OcrService { +recognize(image/text) Promise~OcrResult~ }
+  class AttributionService { +generate(q, ans?) Promise~AttrResult~ }
+  class FollowupService { +followup(loopId, msg, round) Promise~FollowupResult~ }
+  class TrackingService { +ingest(events) Promise~IngestResult~ }
+  class UploadService { +handleUpload(req) Promise~UploadResult~ }
+  class DashboardService { +computeM1(window) Promise~M1Stats~ }
+
+  OcrService --> LlmProvider : 视觉模型
+  AttributionService --> LlmProvider : 文本模型
+  FollowupService --> LlmProvider
+  UploadService --> OcrService
+  UploadService ..> Mistake : 落库
+  UploadService ..> LoopSession : 落库
+  AttributionService ..> Attribution : 落库
+  TrackingService ..> AnalyticsEvent : 幂等落库
+  DashboardService ..> AnalyticsEvent : 聚合

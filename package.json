@@ -1,0 +1,25 @@
+{
+  "name": "aicorrection-v0.1",
+  "version": "0.1.0",
+  "private": true,
+  "description": "错题强化闭环 v0.1 monorepo (R01+R02+R03 + Infra-0)",
+  "workspaces": [
+    "packages/shared",
+    "apps/web",
+    "apps/api"
+  ],
+  "scripts": {
+    "build:shared": "npm run build -w @aicorrection/shared",
+    "dev": "npm run build:shared && concurrently -n web,api -c blue,green \"npm:dev:web\" \"npm:dev:api\"",
+    "dev:web": "npm run dev -w @aicorrection/web",
+    "dev:api": "npm run dev -w @aicorrection/api",
+    "build": "npm run build:shared && npm run build -w @aicorrection/web && npm run build -w @aicorrection/api",
+    "start:api": "npm run build:shared && npm run start -w @aicorrection/api",
+    "smoke": "npm run build:shared && node apps/api/src/tests/e2e-smoke.mjs"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "typescript": "^5.3.0"
+  },
+  "license": "UNLICENSED"
+}

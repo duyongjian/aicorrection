@@ -1,0 +1,23 @@
+{
+  "name": "@aicorrection/shared",
+  "version": "0.1.0",
+  "description": "错题强化闭环 v0.1 前后端共享类型/常量/事件 Schema",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "clean": "rimraf dist"
+  },
+  "devDependencies": {
+    "rimraf": "^5.0.0",
+    "typescript": "^5.3.0"
+  },
+  "license": "UNLICENSED"
+}

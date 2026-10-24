@@ -1,0 +1,82 @@
+sequenceDiagram
+  autonumber
+  actor U as 用户
+  participant C as Web前端
+  participant T as 埋点SDK
+  participant S as API服务
+  participant UP as UploadService
+  participant OCR as OcrService
+  participant LLM as LlmProvider
+  participant AT as AttributionService
+  participant FL as FollowupService
+  participant TS as TrackingService
+
+  Note over U,TS: ① R01 上传
+  U->>C: 拍照/文本提交
+  C->>S: POST /api/v1/upload (image/text, ctx)
+  S->>UP: handleUpload()
+  UP->>OCR: recognize(image/text)
+  OCR->>LLM: chatWithImage(视觉模型)
+  alt Ollama可用
+    LLM-->>OCR: 标准化题干 + ocr_status
+  else 不可达→Mock
+    LLM-->>OCR: mock题干 + ocr_status=partial
+  end
+  OCR-->>UP: {ocr_status, question}
+  UP->>UP: 生成 loop_id, 落 loop_sessions+mistakes
+  UP-->>S: {loop_id, ocr_status, question}
+  S-->>C: 200 {loop_id, ocr_status, question}
+  C->>T: emit loop_upload (ctx+props)
+  T->>S: POST /api/v1/track [loop_upload]
+
+  alt ocr_status = fail
+    C-->>U: 引导重拍 / 文本兜底（loop_upload 已含 fail 口径）
+  else ocr_status = success/partial
+    Note over U,TS: ② R02 归因
+    C->>S: POST /api/v1/attribution {loop_id, question}
+    S->>AT: generateAttribution()
+    AT->>LLM: chat(归因 prompt)
+    alt 超时(>25s)
+      AT-->>S: {status:'analyzing'}
+      S-->>C: 202 analyzing
+      C-->>U: "正在分析" + 重试入口
+    else 正常
+      LLM-->>AT: {cause, knowledge_point, essence}
+      alt 三项缺项
+        AT-->>S: {status:'incomplete'}
+        S-->>C: 200 incomplete → 前端标记待审，不展示
+      else 三项齐全
+        AT->>AT: 落 attributions(complete)
+        AT-->>S: {status:'ok', cause, knowledge_point, essence, latency}
+        S-->>C: 200 归因结果
+        C->>T: emit loop_attr_show (attr_latency_ms, attr_has_three, knowledge_point, model_version)
+        C-->>U: 三栏卡片展示
+      end
+    end
+
+    Note over U,TS: ③ R03 认可/追问
+    alt 认可
+      U->>C: 点击"认可"
+      C->>S: POST /api/v1/attribution/:loop_id/rate {approve}
+      S->>AT: 更新 attributions.rate_action='approve'
+      C->>T: emit attr_rate {rate_action:'approve'}
+    else 不准确
+      U->>C: 点击"不准确"
+      C->>S: POST .../rate {inaccurate, reason}
+      C->>T: emit attr_rate {rate_action:'inaccurate', inaccurate_reason}
+    else 追问(限1次有效)
+      U->>C: 点击"追问"
+      C->>S: POST .../followup {message, round=1}
+      S->>FL: generateFollowup()
+      FL->>LLM: chat(苏格拉底补充归因)
+      LLM-->>FL: 补充归因
+      FL-->>S: {content, role:'ai_ask', has_next_action:true, remaining:0}
+      S-->>C: 200 补充归因
+      C->>T: emit followup {followup_round:1, role:'ai_ask', has_next_action:true}
+      C-->>U: 展示补充归因 + 再次认可入口
+      opt 达上限(remaining=0)
+        FL-->>S: {has_next_action:false, msg:'已达当前追问深度'}
+        C-->>U: 提示引导回练习(v0.2 接入)
+      end
+    end
+  end
