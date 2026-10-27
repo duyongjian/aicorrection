@@ -137,12 +137,13 @@ async function recognizeImageLocal(
         if (guard.ok) {
           latex = guard.latex;
         } else {
+          const m = guard.metrics;
           console.warn(
             `[ocr] 丢弃疑似臆造 LaTeX（不拼入 question）loop_id=${
               opts.loopId ?? '-'
-            } reason=${guard.reason}${guard.detail ? ` (${guard.detail})` : ''} len=${
-              candidate.length
-            } snippet=${JSON.stringify(candidate.slice(0, 80))}`
+            } reason=${guard.reason} len=${m.len} score=${m.score}` +
+              ` (strong=${m.strong},weak=${m.weak}) density=${m.density.toFixed(2)}` +
+              ` snippet=${JSON.stringify(candidate.slice(0, 80))}`
           );
         }
       }
