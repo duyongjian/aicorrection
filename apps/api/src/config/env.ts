@@ -49,6 +49,27 @@ export const env = {
   FOLLOWUP_TIMEOUT_MS: toNum(process.env.FOLLOWUP_TIMEOUT_MS, 30_000),
   OCR_TIMEOUT_MS: toNum(process.env.OCR_TIMEOUT_MS, 30_000),
 
+  // ---- 本地 OCR（Python 子进程，纯 CPU，非视觉大模型）----
+  /** auto=优先本地、失败降级视觉大模型；local=只用本地；llm=只用视觉大模型 */
+  OCR_MODE: (process.env.OCR_MODE ?? 'auto') as 'auto' | 'local' | 'llm',
+  /** 文本识别引擎（实测 RapidOCR ~2.4s；Paddle 做文本 ~17s 太慢，勿用） */
+  OCR_TEXT_ENGINE: (process.env.OCR_TEXT_ENGINE ?? 'rapid') as
+    | 'rapid'
+    | 'paddle'
+    | 'tesseract',
+  /** 命中数学信号时是否自动跑一次 Paddle 公式识别（PP-FormulaNet-S，~1.3s） */
+  OCR_FORMULA_AUTO: toBool(process.env.OCR_FORMULA_AUTO, true),
+  /** Python 解释器（指向装有 rapidocr/paddleocr/pytesseract 的 venv） */
+  OCR_PYTHON:
+    process.env.OCR_PYTHON ??
+    'D:/AllSideProject/AICorrection/.venv-ocr/Scripts/python.exe',
+  /** OCR CLI 脚本路径（默认解析到 apps/api/scripts/ocr/ocr_cli.py） */
+  OCR_CLI:
+    process.env.OCR_CLI ??
+    path.resolve(__dirname, '../../scripts/ocr/ocr_cli.py'),
+  /** 本地 OCR 子进程超时（Paddle 冷启可能 17s+，比 OCR_TIMEOUT_MS 更宽松） */
+  OCR_LOCAL_TIMEOUT_MS: toNum(process.env.OCR_LOCAL_TIMEOUT_MS, 60_000),
+
   DATA_DIR: path.resolve(__dirname, '../data'),
   DB_PATH:
     process.env.DB_PATH ??

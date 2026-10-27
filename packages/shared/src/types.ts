@@ -158,6 +158,8 @@ export interface UploadResponse {
   mistake_id: string;
   ocr_status: OcrStatus;
   question: string;
+  /** 公式识别得到的 LaTeX；非公式/未启用公式识别时为 null。可选以保证旧消费方兼容。 */
+  latex?: string | null;
 }
 
 // ===================== 归因 (R02 / ATT-02) =====================

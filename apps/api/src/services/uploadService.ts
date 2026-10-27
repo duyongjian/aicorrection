@@ -67,29 +67,32 @@ function createLoopSessionRetry(ls: LoopSession): void {
 }
 
 export async function handleUpload(input: UploadInput): Promise<UploadResponse> {
-  // ① OCR
-  const ocr =
-    input.imageBuffer && input.src_type === 'photo'
-      ? await recognizeImage(input.imageBuffer)
-      : recognizeText(input.raw_text);
-
-  const question = ocr.question;
+  // ① ID 与时间戳（先生成，落盘文件名依赖 mistake_id）
   const loop_id = generateLoopId();
   const mistake_id = generateMistakeId();
   const now = new Date().toISOString();
 
-  // ② 图片落盘（加密：TODO 待定，见 §8.4，v0.1 先明文落 apps/api/data/uploads/）
+  // ② 图片先落盘（本地 OCR CLI 接收"图片路径"而非 Buffer，故必须在 OCR 之前）
+  //    加密：TODO 待定，见 §8.4，v0.1 先明文落 apps/api/data/uploads/
   let mistake_ref: string | null = null;
+  let imagePath: string | null = null;
   if (input.imageBuffer && input.imageExt) {
     fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
     const fname = `${mistake_id}${input.imageExt}`;
-    fs.writeFileSync(path.join(env.UPLOAD_DIR, fname), input.imageBuffer);
+    imagePath = path.join(env.UPLOAD_DIR, fname);
+    fs.writeFileSync(imagePath, input.imageBuffer);
     mistake_ref = fname; // TODO: AES-256-GCM 加密存储待定
   } else if (input.raw_text) {
     mistake_ref = `hash:${hashText(input.raw_text)}`;
   }
 
-  // ③ 落库
+  // ③ OCR（图片入口传落盘后的绝对路径；文本入口复用原文）
+  const ocr =
+    imagePath && input.src_type === 'photo'
+      ? await recognizeImage(imagePath, { subject: input.subject })
+      : recognizeText(input.raw_text);
+
+  // ④ 落库
   createLoopSessionRetry({
     loop_id,
     anon_user_id: input.anon_user_id,
@@ -124,6 +127,7 @@ export async function handleUpload(input: UploadInput): Promise<UploadResponse> 
     loop_id,
     mistake_id,
     ocr_status: ocr.ocr_status,
-    question,
+    question: ocr.question,
+    latex: ocr.latex ?? null,
   };
 }

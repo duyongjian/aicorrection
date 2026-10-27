@@ -12,4 +12,10 @@ export const TIMEOUT = {
   FOLLOWUP_MS: env.FOLLOWUP_TIMEOUT_MS,
   /** OCR 视觉模型超时 → ocr_status='fail' */
   OCR_MS: env.OCR_TIMEOUT_MS,
+  /**
+   * 本地 OCR（Python 子进程）超时 → 子进程被 kill 并降级。
+   * RapidOCR ~2.4s / Paddle 公式 ~1.3s，但 Paddle 模型首次加载/冷启可能 17s+，
+   * 故单独放宽到 60s（OCR_MS 是给"整个 OCR 步骤"的 30s，不复用）。
+   */
+  OCR_LOCAL_MS: env.OCR_LOCAL_TIMEOUT_MS,
 } as const;
