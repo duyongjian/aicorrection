@@ -18,6 +18,7 @@ import {
   runLocalOcr,
   type LocalOcrEngine,
 } from './localOcrService';
+import { validateLatex } from './latexGuard';
 
 export interface OcrResult {
   ocr_status: OcrStatus;
@@ -28,6 +29,8 @@ export interface OcrResult {
 
 export interface RecognizeImageOpts {
   subject?: string;
+  /** 仅用于日志定位：丢弃臆造 LaTeX 时打印，便于回溯是否误杀 */
+  loopId?: string;
 }
 
 const OCR_PROMPT =
@@ -127,7 +130,22 @@ async function recognizeImageLocal(
         formula: true,
       });
       const candidate = (f.texts[0]?.text ?? '').trim();
-      if (candidate) latex = candidate;
+      if (candidate) {
+        // PP-FormulaNet-S 对不含公式的图也会强行吐一段臆造 LaTeX（score 恒 1.0），
+        // 故"拿到 LaTeX"不等于"该用"，必须过校验才允许拼进 question。
+        const guard = validateLatex(candidate, question);
+        if (guard.ok) {
+          latex = guard.latex;
+        } else {
+          console.warn(
+            `[ocr] 丢弃疑似臆造 LaTeX（不拼入 question）loop_id=${
+              opts.loopId ?? '-'
+            } reason=${guard.reason}${guard.detail ? ` (${guard.detail})` : ''} len=${
+              candidate.length
+            } snippet=${JSON.stringify(candidate.slice(0, 80))}`
+          );
+        }
+      }
     } catch {
       // 公式识别失败不阻断已拿到的题干文本
     }

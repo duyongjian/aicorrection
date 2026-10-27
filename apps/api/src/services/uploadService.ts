@@ -89,7 +89,10 @@ export async function handleUpload(input: UploadInput): Promise<UploadResponse> 
   // ③ OCR（图片入口传落盘后的绝对路径；文本入口复用原文）
   const ocr =
     imagePath && input.src_type === 'photo'
-      ? await recognizeImage(imagePath, { subject: input.subject })
+      ? await recognizeImage(imagePath, {
+          subject: input.subject,
+          loopId: loop_id,
+        })
       : recognizeText(input.raw_text);
 
   // ④ 落库
