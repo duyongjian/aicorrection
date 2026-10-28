@@ -25,13 +25,22 @@ export class OllamaProvider implements LlmProvider {
   async isAvailable(): Promise<boolean> {
     try {
       const res = await this.client.models.list();
-      if (!Array.isArray(res.data) || res.data.length === 0) return false;
-      const ids = res.data.map((m) => m.id);
-      // 必须包含配置的主文本模型，否则视为不可用 → 触发 Mock 兜底。
-      // 避免“Ollama 服务在、但目标模型未拉取”导致归因调用立即报错并落 analyzing。
-      return ids.includes(this.textModel);
+      // 注意：llama.cpp 单模型服务端返回的 id 未必等于配置的 LLM_MODEL
+      //（常为 `-m` 路径或文件名），精确匹配会误判“不可用”→ 静默走 Mock。
+      // 故只要端点可达且有模型在服，即视为可用；具体 model 路由交由 chat 兜底。
+      return Array.isArray(res.data) && res.data.length > 0;
     } catch {
       return false;
+    }
+  }
+
+  async listModels(): Promise<string[]> {
+    try {
+      const res = await this.client.models.list();
+      if (!Array.isArray(res.data)) return [];
+      return res.data.map((m) => m.id);
+    } catch {
+      return [];
     }
   }
 

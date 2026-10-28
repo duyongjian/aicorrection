@@ -33,4 +33,6 @@ export interface LlmProvider {
   ): Promise<LlmResult>;
   /** 探活：返回该提供方当前是否可达 */
   isAvailable(): Promise<boolean>;
+  /** 列出端点当前服务的模型 id（用于接线校验 / 状态接口） */
+  listModels(): Promise<string[]>;
 }

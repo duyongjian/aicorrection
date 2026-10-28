@@ -42,7 +42,9 @@ export const env = {
   LLM_API_KEY: process.env.LLM_API_KEY ?? 'ollama',
   LLM_MODEL: process.env.LLM_MODEL ?? 'qwen2.5:0.5b',
   VISION_MODEL: process.env.VISION_MODEL ?? 'llama3.2-vision',
-  AUTO_FALLBACK_TO_MOCK: toBool(process.env.AUTO_FALLBACK_TO_MOCK, true),
+  // 无 Mock 策略（产品硬约束）：真实模型失败必须如实返回失败，绝不用假数据凑数。
+  // 默认 false —— 仅在显式打开时，真实模型不可达才降级 Mock（演示用）。
+  AUTO_FALLBACK_TO_MOCK: toBool(process.env.AUTO_FALLBACK_TO_MOCK, false),
 
   // 调用超时（可配置；本机小参数模型首加载较慢，默认放宽到 45s）
   ATTRIBUTION_TIMEOUT_MS: toNum(process.env.ATTRIBUTION_TIMEOUT_MS, 45_000),

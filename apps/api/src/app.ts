@@ -23,6 +23,7 @@ import reviewRoutes from './routes/reviewRoutes';
 import trackingRoutes from './routes/trackingRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
+import { getProvider } from './services/llm';
 
 export function createApp() {
   const app = express();
@@ -38,6 +39,26 @@ export function createApp() {
 
   app.get('/health', (_req, res) => {
     res.json({ ok: true, base, provider: env.LLM_PROVIDER });
+  });
+
+  // 只读状态接口：确认 AI 接入接线（provider / 模型 id / 可达性），不改动任何配置。
+  // 用途：改完 .env 后，无需重启就能看到当前生效的 LLM 配置与本地模型是否在线。
+  app.get(`${base}/config/llm-status`, async (_req, res) => {
+    const provider = getProvider();
+    const [isAvailable, models] = await Promise.all([
+      provider.isAvailable().catch(() => false),
+      provider.listModels().catch(() => []),
+    ]);
+    res.json({
+      provider: env.LLM_PROVIDER,
+      providerName: provider.name,
+      baseUrl: env.LLM_BASE_URL,
+      textModel: env.LLM_MODEL,
+      visionModel: env.VISION_MODEL,
+      autoFallbackToMock: env.AUTO_FALLBACK_TO_MOCK,
+      isAvailable,
+      models,
+    });
   });
 
   app.use(`${base}/account`, accountRoutes);

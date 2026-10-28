@@ -30,6 +30,10 @@ export class MockProvider implements LlmProvider {
     return false; // Mock 永远"不可达真实模型"，仅作兜底
   }
 
+  async listModels(): Promise<string[]> {
+    return []; // Mock 无真实模型端点
+  }
+
   async chat(
     messages: LlmMessage[],
     opts?: LlmOptions
