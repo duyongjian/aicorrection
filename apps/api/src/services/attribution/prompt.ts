@@ -14,7 +14,10 @@ export const ATTR_SYSTEM = `你是一名资深学科诊断教练，擅长"触及
 
 约束：
 - 只输出这三行作为最终结论，不要附加任何解释性文字。
-- 不论中间如何推导，最终三行必须完整且互不缺失（错因/知识点/本质 缺一不可）。`;
+- 不论中间如何推导，最终三行必须完整且互不缺失（错因/知识点/本质 缺一不可）。
+- 错因必须是能从题干与作答中严谨推导出的、具体的错误（如链式法则漏系数/未套公式、符号错误、约分或公因式未约、闭区间端点未比较、概念混淆等）。
+- 若题干本身正确无误，或无法定位具体错因，请如实说明（例如 错因：解法正确，未出现错误），不要臆造或强行归因。
+- "本质"所陈述的因果关系必须与数学推导一致；不要引入题干未要求、且对出错并不必要的臆想步骤（例如凭空说"未用原方程替换某项"，而该项在运算中会自然消去）。`;
 
 export const FOLLOWUP_SYSTEM = `[FOLLOWUP_MODE] 你是苏格拉底式追问教练。针对用户对已归因结果的追问，给出一步更深层的补充归因解读（1-3 句），引导用户从"为什么"出发再拆解，而非直接给答案。`;
 
@@ -22,7 +25,7 @@ export function attrUserPrompt(question: string, userAnswer?: string): string {
   const ansPart = userAnswer && userAnswer.trim()
     ? `\n用户作答：${userAnswer.trim()}`
     : '';
-  return `题干：\n${question.trim()}${ansPart}\n请按格式输出诊断：`;
+  return `题干：\n${question.trim()}${ansPart}\n请先独立推导该题的正确解法，再比对学生作答，只指出真实存在的具体错因。\n请按格式输出诊断：`;
 }
 
 export function followupUserPrompt(message: string, originalAttribution?: string): string {

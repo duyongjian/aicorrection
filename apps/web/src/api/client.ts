@@ -21,9 +21,17 @@ import type {
   ReviewWriteResponse,
 } from '@aicorrection/shared';
 
+/**
+ * 全局请求超时。必须 >= 后端 ATTRIBUTION_TIMEOUT_MS(当前 120s)，且 >=
+ * 本地 CPU 推理模型（MiniCPM-V-4.5 等）冷启动 + 单次归因耗时。否则会抢在
+ * 模型返回前 abort 连接，前端误报"归因请求失败"（实际模型仍在算）。
+ * 本项目是离线本地重推理应用，全局 120s 超时是可接受的。
+ */
+const REQUEST_TIMEOUT_MS = 120_000;
+
 const http = axios.create({
   baseURL: '/api/v1',
-  timeout: 30_000,
+  timeout: REQUEST_TIMEOUT_MS,
 });
 
 // 统一错误处理：把后端 {code,message}（业务错误）与 HTTP 错误转成可读 Error，
