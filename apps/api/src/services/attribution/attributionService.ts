@@ -64,7 +64,7 @@ export async function generateAttribution(
 
   try {
     const res = await withTimeout(
-      provider.chat(messages, { maxTokens: 800 }),
+      provider.chat(messages, { maxTokens: 4096 }),
       TIMEOUT.ATTRIBUTION_MS
     );
     text = res.text;

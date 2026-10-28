@@ -46,9 +46,10 @@ export const env = {
   // 默认 false —— 仅在显式打开时，真实模型不可达才降级 Mock（演示用）。
   AUTO_FALLBACK_TO_MOCK: toBool(process.env.AUTO_FALLBACK_TO_MOCK, false),
 
-  // 调用超时（可配置；本机小参数模型首加载较慢，默认放宽到 45s）
-  ATTRIBUTION_TIMEOUT_MS: toNum(process.env.ATTRIBUTION_TIMEOUT_MS, 45_000),
-  FOLLOWUP_TIMEOUT_MS: toNum(process.env.FOLLOWUP_TIMEOUT_MS, 30_000),
+  // 调用超时（可配置；本地 CPU 推理的推理类模型首加载/长推理较慢，默认放宽。
+  // MiniCPM-V-4.5 等推理模型 reasoning_content 较长，归因需给足时间以免截断后无结论）
+  ATTRIBUTION_TIMEOUT_MS: toNum(process.env.ATTRIBUTION_TIMEOUT_MS, 120_000),
+  FOLLOWUP_TIMEOUT_MS: toNum(process.env.FOLLOWUP_TIMEOUT_MS, 60_000),
   OCR_TIMEOUT_MS: toNum(process.env.OCR_TIMEOUT_MS, 30_000),
 
   // ---- 本地 OCR（Python 子进程，纯 CPU，非视觉大模型）----

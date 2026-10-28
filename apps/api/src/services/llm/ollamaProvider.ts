@@ -53,7 +53,7 @@ export class OllamaProvider implements LlmProvider {
       model: opts?.model ?? this.textModel,
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
       temperature: opts?.temperature ?? 0.3,
-      max_tokens: opts?.maxTokens ?? 800,
+      max_tokens: opts?.maxTokens ?? 2048,
     });
     const text = extractContent(res.choices?.[0]?.message as RawMsg | undefined);
     return {
@@ -83,7 +83,7 @@ export class OllamaProvider implements LlmProvider {
           ],
         },
       ],
-      max_tokens: opts?.maxTokens ?? 800,
+      max_tokens: opts?.maxTokens ?? 2048,
     });
     const text = extractContent(res.choices?.[0]?.message as RawMsg | undefined);
     return {
