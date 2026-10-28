@@ -55,7 +55,7 @@ export class OllamaProvider implements LlmProvider {
       temperature: opts?.temperature ?? 0.3,
       max_tokens: opts?.maxTokens ?? 800,
     });
-    const text = res.choices?.[0]?.message?.content ?? '';
+    const text = extractContent(res.choices?.[0]?.message as RawMsg | undefined);
     return {
       text,
       model: opts?.model ?? this.textModel,
@@ -85,11 +85,26 @@ export class OllamaProvider implements LlmProvider {
       ],
       max_tokens: opts?.maxTokens ?? 800,
     });
-    const text = res.choices?.[0]?.message?.content ?? '';
+    const text = extractContent(res.choices?.[0]?.message as RawMsg | undefined);
     return {
       text,
       model: opts?.model ?? this.visionModel,
       latencyMs: Date.now() - t0,
     };
   }
+}
+
+/**
+ * 抽取模型回复文本。
+ * 推理类本地模型（如 MiniCPM-V-4.5）会把完整答案放进非标准的 `reasoning_content`，
+ * 而标准 `content` 为空 —— 直接读 content 会导致"出方案"拿到空串。
+ * 故：content 非空优先；否则回退到 reasoning_content（此时它即解法本身）。
+ */
+type RawMsg = { content?: string | null; reasoning_content?: string | null };
+function extractContent(msg: RawMsg | undefined): string {
+  if (!msg) return '';
+  const c = typeof msg.content === 'string' ? msg.content : '';
+  if (c.trim()) return c;
+  const r = typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '';
+  return r;
 }
