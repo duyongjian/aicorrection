@@ -4,7 +4,7 @@
  * 注：降级态以 HTTP 200 + data.status 表达（前后端一致，见 §7.6 取舍说明）。
  * T4: 当 provider 为 mock 或 fallback 时，打标 is_mock=true。
  */
-import { getProvider } from '../llm';
+import { getAnalysisProvider } from '../llm';
 import { MockProvider } from '../llm/mockProvider';
 import { env } from '../../config/env';
 import { createAttribution } from '../../models/attributionModel';
@@ -32,7 +32,8 @@ export interface AttrInput {
 export async function generateAttribution(
   input: AttrInput
 ): Promise<AttributionData> {
-  const provider = getProvider();
+  // 归因分析走独立的分析 provider（ANALYSIS_*，可指向另一个本地强模型）
+  const provider = getAnalysisProvider();
   const userContent = attrUserPrompt(input.question, input.user_answer);
   const messages: LlmMessage[] = [
     { role: 'system', content: ATTR_SYSTEM },

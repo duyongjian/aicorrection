@@ -9,7 +9,7 @@
  * 文本入口（text/paste）无需 OCR，直接复用原文，ocr_status='success'。
  */
 import fs from 'node:fs';
-import { getProvider } from '../llm';
+import { getRecognitionProvider } from '../llm';
 import { MockProvider } from '../llm/mockProvider';
 import { env } from '../../config/env';
 import { MOCK_ATTR_MODEL_VERSION } from '@aicorrection/shared';
@@ -163,7 +163,8 @@ async function recognizeImageLocal(
 
 /** 视觉大模型图片识别（LLM 模式 / auto 降级路径，逻辑与改造前一致）。 */
 async function recognizeImageByLlm(imagePath: string): Promise<OcrResult> {
-  const provider = getProvider();
+  // 图片识别走识别 provider（LLM_* / VISION_*，仍指向 MiniCPM 等视觉模型）
+  const provider = getRecognitionProvider();
   const base64 = fs.readFileSync(imagePath).toString('base64');
   try {
     const res = await provider.chatWithImage(base64, OCR_PROMPT);

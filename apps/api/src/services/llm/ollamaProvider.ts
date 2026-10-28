@@ -7,19 +7,28 @@ import OpenAI from 'openai';
 import { env } from '../../config/env';
 import type { LlmMessage, LlmOptions, LlmProvider, LlmResult } from './provider';
 
+/** 构造参数覆盖项：用于把同一批 LLM 逻辑指向不同端点/模型（识别 vs 分析）。 */
+export interface OllamaProviderOptions {
+  baseUrl?: string;
+  textModel?: string;
+  visionModel?: string;
+  apiKey?: string;
+}
+
 export class OllamaProvider implements LlmProvider {
   readonly name = 'ollama';
   private client: OpenAI;
   private textModel: string;
   private visionModel: string;
 
-  constructor() {
+  /** 无参调用时行为与改造前完全一致（全部读 env 的 LLM_* / VISION_*）。 */
+  constructor(opts?: OllamaProviderOptions) {
     this.client = new OpenAI({
-      baseURL: env.LLM_BASE_URL,
-      apiKey: env.LLM_API_KEY,
+      baseURL: opts?.baseUrl ?? env.LLM_BASE_URL,
+      apiKey: opts?.apiKey ?? env.LLM_API_KEY,
     });
-    this.textModel = env.LLM_MODEL;
-    this.visionModel = env.VISION_MODEL;
+    this.textModel = opts?.textModel ?? env.LLM_MODEL;
+    this.visionModel = opts?.visionModel ?? env.VISION_MODEL;
   }
 
   async isAvailable(): Promise<boolean> {

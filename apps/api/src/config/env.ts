@@ -32,19 +32,34 @@ function toNum(value: string | undefined, def: number): number {
 
 export type LlmProviderKind = 'ollama' | 'mock' | 'openai';
 
+// LLM_* 基线值：分析端 ANALYSIS_* 未显式配置时回落到这里，
+// 保证"未配置 ANALYSIS_*"时分析 provider 与识别 provider 指向同一端点、同一模型，
+// 行为与拆分前完全一致（向后兼容硬要求）。
+const llmBaseUrl = process.env.LLM_BASE_URL ?? 'http://localhost:11434/v1';
+const llmApiKey = process.env.LLM_API_KEY ?? 'ollama';
+const llmModel = process.env.LLM_MODEL ?? 'qwen2.5:0.5b';
+
 export const env = {
   PORT: toNum(process.env.PORT, 3001),
   NODE_ENV: process.env.NODE_ENV ?? 'development',
   API_BASE_PATH: process.env.API_BASE_PATH ?? '/api/v1',
 
   LLM_PROVIDER: (process.env.LLM_PROVIDER ?? 'ollama') as LlmProviderKind,
-  LLM_BASE_URL: process.env.LLM_BASE_URL ?? 'http://localhost:11434/v1',
-  LLM_API_KEY: process.env.LLM_API_KEY ?? 'ollama',
-  LLM_MODEL: process.env.LLM_MODEL ?? 'qwen2.5:0.5b',
+  LLM_BASE_URL: llmBaseUrl,
+  LLM_API_KEY: llmApiKey,
+  LLM_MODEL: llmModel,
   VISION_MODEL: process.env.VISION_MODEL ?? 'llama3.2-vision',
   // 无 Mock 策略（产品硬约束）：真实模型失败必须如实返回失败，绝不用假数据凑数。
   // 默认 false —— 仅在显式打开时，真实模型不可达才降级 Mock（演示用）。
   AUTO_FALLBACK_TO_MOCK: toBool(process.env.AUTO_FALLBACK_TO_MOCK, false),
+
+  // ---- 分析 / 归因 专用模型（与"识别/视觉"分家）----
+  // 背景：本地 MiniCPM-V-4.5 做视觉识别够用，但做"归因分析"会臆造错因；
+  // 故归因/追问可指向另一个更强的本地大模型（例如另起 llama.cpp 实例跑更大的 Qwen）。
+  // 三者均默认回落上面的 LLM_*，未配置时行为与分家前完全一致。
+  ANALYSIS_BASE_URL: process.env.ANALYSIS_BASE_URL ?? llmBaseUrl,
+  ANALYSIS_MODEL: process.env.ANALYSIS_MODEL ?? llmModel,
+  ANALYSIS_API_KEY: process.env.ANALYSIS_API_KEY ?? llmApiKey,
 
   // 调用超时（可配置；本地 CPU 推理的推理类模型首加载/长推理较慢，默认放宽。
   // MiniCPM-V-4.5 等推理模型 reasoning_content 较长，归因需给足时间以免截断后无结论）

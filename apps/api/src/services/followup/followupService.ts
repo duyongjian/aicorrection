@@ -3,7 +3,7 @@
  * 苏格拉底补充归因；MVP 限 1 次有效追问（防 R2 信任崩塌）。
  * 已达 1 次 → 拒绝新增，返回 has_next_action:false + "已达当前追问深度"。
  */
-import { getProvider } from '../llm';
+import { getAnalysisProvider } from '../llm';
 import { getLoopSession, incrementFollowupRounds } from '../../models/loopSessionModel';
 import { getAttributionByLoop } from '../../models/attributionModel';
 import { withTimeout } from '../../utils/promise';
@@ -34,7 +34,8 @@ export async function followup(
     };
   }
 
-  const provider = getProvider();
+  // 追问与归因同源：走独立的分析 provider（ANALYSIS_*）
+  const provider = getAnalysisProvider();
   const original = getAttributionByLoop(loop_id);
   const originalText = original
     ? `错因：${original.cause}；知识点：${original.knowledge_point}；本质：${original.essence}`

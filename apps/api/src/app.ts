@@ -23,7 +23,7 @@ import reviewRoutes from './routes/reviewRoutes';
 import trackingRoutes from './routes/trackingRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
-import { getProvider } from './services/llm';
+import { getAnalysisProvider, getRecognitionProvider } from './services/llm';
 
 export function createApp() {
   const app = express();
@@ -43,13 +43,19 @@ export function createApp() {
 
   // 只读状态接口：确认 AI 接入接线（provider / 模型 id / 可达性），不改动任何配置。
   // 用途：改完 .env 后，无需重启就能看到当前生效的 LLM 配置与本地模型是否在线。
+  // 两段接线：recognition=题目识别/视觉（LLM_* / VISION_*），analysis=归因/追问（ANALYSIS_*）。
+  // ANALYSIS_* 未配置时两者指向同一端点，便于改完 .env 后无需重启即可核对是否生效。
   app.get(`${base}/config/llm-status`, async (_req, res) => {
-    const provider = getProvider();
-    const [isAvailable, models] = await Promise.all([
+    const provider = getRecognitionProvider();
+    const analysis = getAnalysisProvider();
+    const [isAvailable, models, analysisAvailable, analysisModels] = await Promise.all([
       provider.isAvailable().catch(() => false),
       provider.listModels().catch(() => []),
+      analysis.isAvailable().catch(() => false),
+      analysis.listModels().catch(() => []),
     ]);
     res.json({
+      // ---- 原有顶层字段：保留以免破坏既有调用方 ----
       provider: env.LLM_PROVIDER,
       providerName: provider.name,
       baseUrl: env.LLM_BASE_URL,
@@ -58,6 +64,26 @@ export function createApp() {
       autoFallbackToMock: env.AUTO_FALLBACK_TO_MOCK,
       isAvailable,
       models,
+      // ---- 新增：识别 / 分析 两段分别报告 ----
+      recognition: {
+        providerName: provider.name,
+        baseUrl: env.LLM_BASE_URL,
+        textModel: env.LLM_MODEL,
+        visionModel: env.VISION_MODEL,
+        isAvailable,
+        models,
+      },
+      analysis: {
+        providerName: analysis.name,
+        baseUrl: env.ANALYSIS_BASE_URL,
+        model: env.ANALYSIS_MODEL,
+        // 是否真的与识别端分家（ANALYSIS_* 与 LLM_* 不同即为 true）
+        isSeparate:
+          env.ANALYSIS_BASE_URL !== env.LLM_BASE_URL ||
+          env.ANALYSIS_MODEL !== env.LLM_MODEL,
+        isAvailable: analysisAvailable,
+        models: analysisModels,
+      },
     });
   });
 
