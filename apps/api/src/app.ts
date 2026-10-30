@@ -54,6 +54,44 @@ export function createApp() {
       analysis.isAvailable().catch(() => false),
       analysis.listModels().catch(() => []),
     ]);
+    const analysisIsSeparate =
+      env.ANALYSIS_BASE_URL !== env.LLM_BASE_URL ||
+      env.ANALYSIS_MODEL !== env.LLM_MODEL;
+
+    // ---- 生效值回显 + 配置体检 ----
+    // 背景：dotenv 下 .env 的显式值优先级高于代码默认值。曾出现 .env 里仍写着旧的
+    // 45s/30s，强模型必然超时并静默走诚实降级 analyzing —— 不报错、难排查。
+    // 这里把实际生效值原样回显，并对明显不足的超时给出显式告警。
+    const RECOMMENDED_ATTRIBUTION_TIMEOUT_MS = 180_000;
+    const RECOMMENDED_FOLLOWUP_TIMEOUT_MS = 120_000;
+    const warnings: string[] = [];
+    if (env.ATTRIBUTION_TIMEOUT_MS < RECOMMENDED_ATTRIBUTION_TIMEOUT_MS) {
+      warnings.push(
+        'ATTRIBUTION_TIMEOUT_MS 当前生效 ' + env.ATTRIBUTION_TIMEOUT_MS +
+        'ms，低于建议下限 ' + RECOMMENDED_ATTRIBUTION_TIMEOUT_MS +
+        'ms。本机 Qwen3.8-27B 归因实测区间 60s~161s，超时不会报错而是静默走诚实降级 analyzing。' +
+        '请在 apps/api/.env 改为 ATTRIBUTION_TIMEOUT_MS=300000（或删除该行以回落代码默认值）。'
+      );
+    }
+    if (env.FOLLOWUP_TIMEOUT_MS < RECOMMENDED_FOLLOWUP_TIMEOUT_MS) {
+      warnings.push(
+        'FOLLOWUP_TIMEOUT_MS 当前生效 ' + env.FOLLOWUP_TIMEOUT_MS +
+        'ms，低于建议下限 ' + RECOMMENDED_FOLLOWUP_TIMEOUT_MS +
+        'ms。追问走同一强模型，建议值 180000。'
+      );
+    }
+    if (analysisIsSeparate && !analysisAvailable) {
+      warnings.push(
+        '分析强模型不可达：' + env.ANALYSIS_BASE_URL + ' 模型 ' + env.ANALYSIS_MODEL +
+        '。归因会走诚实降级 analyzing，按无 Mock 策略不会产出假数据。'
+      );
+    }
+    if (analysisIsSeparate && !env.DISABLE_THINKING) {
+      warnings.push(
+        'DISABLE_THINKING 未开启：分析强模型保留思考链时单次归因实测约 266s，关闭后约 161s，建议设为 true。'
+      );
+    }
+
     res.json({
       // ---- 原有顶层字段：保留以免破坏既有调用方 ----
       provider: env.LLM_PROVIDER,
@@ -78,12 +116,22 @@ export function createApp() {
         baseUrl: env.ANALYSIS_BASE_URL,
         model: env.ANALYSIS_MODEL,
         // 是否真的与识别端分家（ANALYSIS_* 与 LLM_* 不同即为 true）
-        isSeparate:
-          env.ANALYSIS_BASE_URL !== env.LLM_BASE_URL ||
-          env.ANALYSIS_MODEL !== env.LLM_MODEL,
+        isSeparate: analysisIsSeparate,
         isAvailable: analysisAvailable,
         models: analysisModels,
       },
+      // ---- 本次新增：实际生效值回显（用于排查 .env 静默覆盖） ----
+      effective: {
+        ATTRIBUTION_TIMEOUT_MS: env.ATTRIBUTION_TIMEOUT_MS,
+        FOLLOWUP_TIMEOUT_MS: env.FOLLOWUP_TIMEOUT_MS,
+        DISABLE_THINKING: env.DISABLE_THINKING,
+        AUTO_FALLBACK_TO_MOCK: env.AUTO_FALLBACK_TO_MOCK,
+        ANALYSIS_BASE_URL: env.ANALYSIS_BASE_URL,
+        ANALYSIS_MODEL: env.ANALYSIS_MODEL,
+        ANALYSIS_API_KEY_SET: Boolean(env.ANALYSIS_API_KEY),
+      },
+      // 配置体检：命中即说明当前配置跑强模型必然降级，附具体处置方法
+      warnings,
     });
   });
 
