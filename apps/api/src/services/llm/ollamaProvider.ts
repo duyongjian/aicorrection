@@ -13,6 +13,8 @@ export interface OllamaProviderOptions {
   textModel?: string;
   visionModel?: string;
   apiKey?: string;
+  /** 关闭思考链（thinking）：请求体带 chat_template_kwargs.enable_thinking=false。 */
+  disableThinking?: boolean;
 }
 
 export class OllamaProvider implements LlmProvider {
@@ -20,8 +22,9 @@ export class OllamaProvider implements LlmProvider {
   private client: OpenAI;
   private textModel: string;
   private visionModel: string;
+  private disableThinking: boolean;
 
-  /** 无参调用时行为与改造前完全一致（全部读 env 的 LLM_* / VISION_*）。 */
+  /** 无参调用时行为与改造前完全一致（全部读 env 的 LLM_* / VISION_*，不关 thinking）。 */
   constructor(opts?: OllamaProviderOptions) {
     this.client = new OpenAI({
       baseURL: opts?.baseUrl ?? env.LLM_BASE_URL,
@@ -29,6 +32,18 @@ export class OllamaProvider implements LlmProvider {
     });
     this.textModel = opts?.textModel ?? env.LLM_MODEL;
     this.visionModel = opts?.visionModel ?? env.VISION_MODEL;
+    this.disableThinking = opts?.disableThinking ?? false;
+  }
+
+  /**
+   * 关闭 thinking 的扩展请求体（llama.cpp / Ollama 支持的 chat_template_kwargs）。
+   * 分析强模型 Qwen3.8-27B 在 8GB 显存下开启 thinking 需 266s，关闭后 161s。
+   * 未开启本开关时返回空对象 —— 请求体与改造前完全一致。
+   */
+  private thinkingParams(): Record<string, unknown> {
+    return this.disableThinking
+      ? { chat_template_kwargs: { enable_thinking: false } }
+      : {};
   }
 
   async isAvailable(): Promise<boolean> {
@@ -63,6 +78,7 @@ export class OllamaProvider implements LlmProvider {
       messages: messages.map((m) => ({ role: m.role, content: m.content })),
       temperature: opts?.temperature ?? 0.3,
       max_tokens: opts?.maxTokens ?? 2048,
+      ...this.thinkingParams(),
     });
     const text = extractContent(res.choices?.[0]?.message as RawMsg | undefined);
     return {
@@ -93,6 +109,7 @@ export class OllamaProvider implements LlmProvider {
         },
       ],
       max_tokens: opts?.maxTokens ?? 2048,
+      ...this.thinkingParams(),
     });
     const text = extractContent(res.choices?.[0]?.message as RawMsg | undefined);
     return {

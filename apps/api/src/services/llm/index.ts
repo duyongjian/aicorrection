@@ -23,7 +23,11 @@ function createRecognition(): LlmProvider {
   return env.LLM_PROVIDER === 'mock' ? new MockProvider() : new OllamaProvider();
 }
 
-/** 构造分析端 provider（ANALYSIS_*；未配置时回落 LLM_*，与识别端等价）。 */
+/**
+ * 构造分析端 provider（ANALYSIS_*；未配置时回落 LLM_*，与识别端等价）。
+ * 额外传 disableThinking：分析强模型在有限显存下思考链极慢，关掉可把
+ * 单次归因从 266s 压到 161s。识别侧不传（MiniCPM 仍需 reasoning_content 兜底）。
+ */
 function createAnalysis(): LlmProvider {
   return env.LLM_PROVIDER === 'mock'
     ? new MockProvider()
@@ -31,6 +35,7 @@ function createAnalysis(): LlmProvider {
         baseUrl: env.ANALYSIS_BASE_URL,
         textModel: env.ANALYSIS_MODEL,
         apiKey: env.ANALYSIS_API_KEY,
+        disableThinking: env.DISABLE_THINKING,
       });
 }
 

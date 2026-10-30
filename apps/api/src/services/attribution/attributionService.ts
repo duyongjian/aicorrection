@@ -65,7 +65,11 @@ export async function generateAttribution(
 
   try {
     const res = await withTimeout(
-      provider.chat(messages, { maxTokens: 4096 }),
+      // max_tokens 1536：按分析强模型 ~3 tok/s 估算，4096 token 需 ~1400s，
+      // 远超 300s 超时预算（等于必然超时）；实测正常归因仅 448 token，
+      // 1536 留约 3x 余量。真触发截断时由 parseAttrTriple 判定缺项 → 返回
+      // incomplete（诚实失败，绝不补假数据）。
+      provider.chat(messages, { maxTokens: 1536 }),
       TIMEOUT.ATTRIBUTION_MS
     );
     text = res.text;

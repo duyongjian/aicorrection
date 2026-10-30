@@ -61,10 +61,22 @@ export const env = {
   ANALYSIS_MODEL: process.env.ANALYSIS_MODEL ?? llmModel,
   ANALYSIS_API_KEY: process.env.ANALYSIS_API_KEY ?? llmApiKey,
 
-  // 调用超时（可配置；本地 CPU 推理的推理类模型首加载/长推理较慢，默认放宽。
-  // MiniCPM-V-4.5 等推理模型 reasoning_content 较长，归因需给足时间以免截断后无结论）
-  ATTRIBUTION_TIMEOUT_MS: toNum(process.env.ATTRIBUTION_TIMEOUT_MS, 120_000),
-  FOLLOWUP_TIMEOUT_MS: toNum(process.env.FOLLOWUP_TIMEOUT_MS, 60_000),
+  /**
+   * 是否关闭模型的思考链（thinking）。默认 true。
+   * 依据：分析强模型 Qwen3.8-27B 跑在 RTX 4060 Laptop（显存仅 8188 MiB，
+   * 而权重 8.2GB）→ 大量层溢出到 CPU，实测生成仅 2.5~3.1 tok/s。
+   * 真实归因实测：thinking 开启 266s / 614 completion token；
+   * thinking 关闭 161s / 448 token。故关闭 thinking 是唯一性价比可接受的解。
+   * 严禁改用"收紧 prompt 禁止推导"来提速 —— 实测该变体虽只要 62s，
+   * 但会丢失诊断能力（把有符号错误的作答误判为"解法正确"），已被否决。
+   */
+  DISABLE_THINKING: toBool(process.env.DISABLE_THINKING, true),
+
+  // 调用超时（可配置）。默认按分析强模型 Qwen3.8-27B @ RTX4060 8GB 显存标定：
+  // 显存不足导致层溢出 CPU，~3 tok/s；thinking 关闭后实测单次归因 161s，
+  // 300s 留约 1.8x 余量；追问走同一强模型，180s 留约 1.1x（追问更短）。
+  ATTRIBUTION_TIMEOUT_MS: toNum(process.env.ATTRIBUTION_TIMEOUT_MS, 300_000),
+  FOLLOWUP_TIMEOUT_MS: toNum(process.env.FOLLOWUP_TIMEOUT_MS, 180_000),
   OCR_TIMEOUT_MS: toNum(process.env.OCR_TIMEOUT_MS, 30_000),
 
   // ---- 本地 OCR（Python 子进程，纯 CPU，非视觉大模型）----
