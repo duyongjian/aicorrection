@@ -19,12 +19,14 @@ import {
   attrUserPrompt,
   parseAttrTriple,
 } from './prompt';
+import { getKnowledgeReferences } from './references';
 
 export interface AttrInput {
   loop_id: string;
   anon_user_id: string;
   question: string;
   user_answer?: string;
+  subject?: string;
   mistake_id?: string | null;
   is_internal?: boolean;
 }
@@ -35,8 +37,18 @@ export async function generateAttribution(
   // 归因分析走独立的分析 provider（ANALYSIS_*，可指向另一个本地强模型）
   const provider = getAnalysisProvider();
   const userContent = attrUserPrompt(input.question, input.user_answer);
+
+  // 知识锚点（grounding）：仅当题干/作答命中特定知识点（如非谓语分词作状语）时，
+  // 在 system 消息尾部拼接人工核查要点，引导模型先复核主谓语态、避免系统性误判。
+  // 锚点不计入最终三行结论，也不出现契约标记词，故不污染 parseAttrTriple 解析。
+  const refs = getKnowledgeReferences(input.question, input.user_answer, input.subject);
+  const refsBlock = refs.length
+    ? '\n\n【知识锚点（仅供你参考 grounding，不要原样复述，也不计入最终三行结论）】\n' +
+      refs.join('\n---\n')
+    : '';
+
   const messages: LlmMessage[] = [
-    { role: 'system', content: ATTR_SYSTEM },
+    { role: 'system', content: ATTR_SYSTEM + refsBlock },
     { role: 'user', content: userContent },
   ];
 

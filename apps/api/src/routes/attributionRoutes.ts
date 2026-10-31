@@ -15,6 +15,8 @@ const schema = z.object({
   anon_user_id: z.string().min(1),
   question: z.string().min(1),
   user_answer: z.string().optional(),
+  // 学科标签：透传给归因服务，用于知识锚点（如英文分词题）的语境门控。
+  subject: z.string().optional(),
 });
 
 router.post('/', validateBody(schema), async (req, res, next) => {

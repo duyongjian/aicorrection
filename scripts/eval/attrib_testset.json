@@ -1,0 +1,29 @@
+[
+  {
+    "id": "E04",
+    "segment": "kaoyan",
+    "subject": "english",
+    "question": "___ by the teacher, the boy felt ashamed. (用 praise 的适当形式填空)",
+    "user_answer": "Praising",
+    "gt_cause": "主语 the boy 与 praise 是被动关系（被老师表扬），应使用过去分词 Praised 而非现在分词 Praising",
+    "gt_knowledge_point": "非谓语动词（分词作状语）"
+  },
+  {
+    "id": "E05",
+    "segment": "kaoyan",
+    "subject": "english",
+    "question": "___ the letter, she burst into tears. (用 read 的适当形式填空)",
+    "user_answer": "Read",
+    "gt_cause": "主语 she 与 read 是主动关系（她读信），应使用现在分词 Reading 而非过去分词 Read",
+    "gt_knowledge_point": "非谓语动词（分词作状语）"
+  },
+  {
+    "id": "E06",
+    "segment": "kaoyan",
+    "subject": "english",
+    "question": "___ from the hill, we saw the whole city. (用 see 的适当形式填空)",
+    "user_answer": "Seen",
+    "gt_cause": "主语 we 与 see 是主动关系（我们主动看），应使用现在分词 Seeing 而非过去分词 Seen",
+    "gt_knowledge_point": "非谓语动词（分词作状语）"
+  }
+]
