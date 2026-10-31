@@ -11,11 +11,13 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "build": "tsc --noEmit -p tsconfig.json",
     "rag:import": "tsx src/scripts/importQbank.ts",
+    "rag:import:mmulu": "tsx src/scripts/import_mmulu.ts",
     "rag:index": "tsx src/scripts/buildQbankIndex.ts",
     "test": "tsx --test src/"
   },
   "dependencies": {
     "@aicorrection/shared": "*",
+    "@huggingface/transformers": "^4.3.2",
     "better-sqlite3": "^9.4.0",
     "cors": "^2.8.5",
     "dotenv": "^16.3.0",

@@ -5,12 +5,14 @@
  *  - 默认嵌入 = localHashEmbed（确定性哈希词袋，D=384，无模型下载、无原生编译依赖）。
  *  - 不引入 sqlite-vec / lancedb / @xenova/transformers 等原生依赖。
  *  - 向量以 JSON 数组存于 qbank_items.embedding_vec 列，由 vectorStore 在 Node 侧算余弦。
- *  - bge 等语义更强的嵌入仅留接口（TODO），通过 RAG_EMBED_MODEL 开关切换。
+ *  - bge（本地 onnx bge-m3，1024 维语义嵌入）通过 RAG_EMBED_MODEL 开关切换；
+ *    缺模型 / 加载 / 推理失败一律优雅回落 localHashEmbed，绝不因缺模型而崩。
  *
  * 确定性：同一文本永远得到同一向量，故建索引与检索两端可独立运行、结果可复现。
  */
 import { env } from '../../config/env';
 import { l2Normalize } from '../../utils/math';
+import { bgeEmbed, isBgeModelAvailable } from './bgeEmbedder';
 
 /** 默认向量维度（local-hash）。若日后接 bge 等，维度需与此一致或由模型决定。 */
 export const RAG_DIM = 384;
@@ -117,24 +119,36 @@ export function activeEmbedModel(): EmbedModel {
 
 /**
  * 嵌入单条文本。模型选择：
- *  - 'local-hash'（默认）：确定性哈希词袋，零依赖。
- *  - 'bge'：预留接口，尚未接入（TODO）。接入方式见 .env.example 说明。
+ *  - 'local-hash'（默认）：确定性哈希词袋，零依赖、永不崩。
+ *  - 'bge'：本地 onnx bge-m3 语义嵌入（见 bgeEmbedder）。
+ *    缺模型 / 加载 / 推理失败 → 优雅回落 localHashEmbed（并 console.warn），归因流程照常。
+ *    注意：bge 为 1024 维，local-hash 为 384 维；切到 bge 后必须重建索引
+ *    （运行 npm run rag:import / rag:index），旧 384 维向量与新 1024 维不兼容。
  */
-export function embed(text: string): number[] {
-  switch (activeEmbedModel()) {
-    case 'bge':
-      // TODO: 接 @xenova/transformers 本地 bge 或远程 embedding 服务。
-      // 当前未接入，显式抛错以避免"静默退化为 hash"造成检索质量误判。
-      throw new Error(
-        "bge embedding 尚未接入（TODO）。请保持 RAG_EMBED_MODEL=local-hash，或实现 bge 分支。"
+export async function embed(text: string): Promise<number[]> {
+  if (activeEmbedModel() === 'bge') {
+    // 短路检测：模型文件缺失则直接回落，避免无谓的联网 / 加载尝试。
+    if (!isBgeModelAvailable()) {
+      console.warn(
+        `[embeddingService] RAG_EMBED_MODEL=bge 但 BGE_MODEL_DIR(${env.BGE_MODEL_DIR}) 无模型文件，回落 local-hash。`
       );
-    case 'local-hash':
-    default:
       return localHashEmbed(text);
+    }
+    try {
+      return await bgeEmbed(text);
+    } catch (e) {
+      console.warn(
+        `[embeddingService] bge 嵌入失败，回落 local-hash：${(e as Error).message}`
+      );
+      return localHashEmbed(text);
+    }
   }
+  return localHashEmbed(text);
 }
 
-/** 批量嵌入。 */
-export function embedBatch(texts: string[]): number[][] {
-  return texts.map((t) => embed(t));
+/** 批量嵌入（逐条，保持与单条一致的可回落语义）。 */
+export async function embedBatch(texts: string[]): Promise<number[][]> {
+  const out: number[][] = [];
+  for (const t of texts) out.push(await embed(t));
+  return out;
 }

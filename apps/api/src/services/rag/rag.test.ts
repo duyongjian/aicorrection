@@ -3,9 +3,11 @@
  *
  * 通过临时 DB 隔离，验证：
  *  1) localHashEmbed 确定性 + L2 模≈1
- *  2) query 对"隐函数求导"召回 M-impl-diff 且分数高于无关题（E-virtual）
- *  3) buildReferenceBlock 不含四标记词（错因/错误原因/知识点/本质）
- *  4) retrieveReferences：已索引 → ok 非空；空库 → empty；嵌入异常 → unavailable（不抛错）
+ *  2) embed / embedBatch 一致且可复现（embed 现为 async）
+ *  3) query 对"隐函数求导"召回 M-impl-diff 且分数高于无关题（E-virtual）
+ *  4) buildReferenceBlock 不含四标记词（错因/错误原因/知识点/本质）
+ *  5) retrieveReferences：已索引 → ok 非空；空库 → empty；
+ *     RAG_EMBED_MODEL=bge 缺模型 → 优雅回落 local-hash（不抛错、不崩）
  *
  * 运行：npm -w @aicorrection/api run test
  */
@@ -58,14 +60,14 @@ const E_VIRTUAL = {
   knowledge_point: '虚拟语气（与现在事实相反）',
 };
 
-function seedIndexed(): void {
+async function seedIndexed(): Promise<void> {
   getDb(); // 触发迁移
   insertQbankItem({ ...M_IMPL_DIFF, solution_steps: null });
   insertQbankItem({ ...E_VIRTUAL, solution_steps: null });
   const a = getQbankById(M_IMPL_DIFF.item_id)!;
   const b = getQbankById(E_VIRTUAL.item_id)!;
-  upsertVec(a.item_id, embed(embedItemSource(a)));
-  upsertVec(b.item_id, embed(embedItemSource(b)));
+  upsertVec(a.item_id, await embed(embedItemSource(a)));
+  upsertVec(b.item_id, await embed(embedItemSource(b)));
 }
 
 test('localHashEmbed 确定性 + L2 模≈1', () => {
@@ -77,15 +79,15 @@ test('localHashEmbed 确定性 + L2 模≈1', () => {
   assert.ok(Math.abs(norm - 1) < 1e-9, `L2 norm 应≈1，实际 ${norm}`);
 });
 
-test('embed / embedBatch 一致且可复现', () => {
-  const single = embed('链式法则 漏系数');
-  const batch = embedBatch(['链式法则 漏系数']);
+test('embed / embedBatch 一致且可复现', async () => {
+  const single = await embed('链式法则 漏系数');
+  const batch = await embedBatch(['链式法则 漏系数']);
   assert.deepEqual(single, batch[0]);
 });
 
-test('query 对"隐函数求导"召回 M-impl-diff 且分数高于无关题', () => {
-  seedIndexed();
-  const q = embed('隐函数求导 dy/dx 隐函数方程 两边求导');
+test('query 对"隐函数求导"召回 M-impl-diff 且分数高于无关题', async () => {
+  await seedIndexed();
+  const q = await embed('隐函数求导 dy/dx 隐函数方程 两边求导');
   const scored = query(q, 4);
   assert.ok(scored.length >= 1, '应至少召回 1 条');
   assert.equal(scored[0].item_id, 'M-impl-diff', '最相关应为 M-impl-diff');
@@ -125,7 +127,7 @@ test('buildReferenceBlock 在 empty/unavailable 时返回空串', () => {
 });
 
 test('retrieveReferences 已索引返回 ok 非空，且不抛错', async () => {
-  seedIndexed();
+  await seedIndexed();
   const r = await retrieveReferences('隐函数求导 dy/dx');
   assert.equal(r.source, 'qbank');
   assert.equal(r.status, 'ok');
@@ -157,20 +159,35 @@ test('retrieveReferences 空库返回 empty（不抛错）', async () => {
   }
 });
 
-test('retrieveReferences 嵌入异常返回 unavailable（不抛错）', async () => {
+test('RAG_EMBED_MODEL=bge 缺模型时优雅回落 local-hash（embed 与 retrieveReferences 均不崩）', async () => {
   const prev = env.RAG_EMBED_MODEL;
-  env.RAG_EMBED_MODEL = 'bge'; // 触发 embed 抛错（未接入）
+  env.RAG_EMBED_MODEL = 'bge'; // 未下载模型 → 应回落 local-hash，而非抛错 / 崩
   try {
-    const r = await retrieveReferences('测试');
-    assert.equal(r.status, 'unavailable');
-    assert.deepEqual(r.items, []);
+    const v = await embed('隐函数求导 dy/dx');
+    assert.ok(Array.isArray(v) && v.length > 0, '应返回有效向量（回落或真实 bge）');
+    const norm = Math.sqrt(v.reduce((s, x) => s + x * x, 0));
+    assert.ok(Math.abs(norm - 1) < 1e-6, `L2 norm 应≈1，实际 ${norm}`);
+
+    // 若本地无 bge 模型文件（默认场景），应回落到 local-hash 维度（384）。
+    const onnxDir = path.join(env.BGE_MODEL_DIR, 'onnx');
+    const hasModel =
+      fs.existsSync(path.join(env.BGE_MODEL_DIR, 'config.json')) &&
+      fs.existsSync(onnxDir) &&
+      fs.readdirSync(onnxDir).some((f) => f.toLowerCase().endsWith('.onnx'));
+    if (!hasModel) {
+      assert.equal(v.length, RAG_DIM, '缺模型时应回落 local-hash（384 维）');
+    }
+
+    // retrieveReferences 不应因 embed 回落而抛错，应返回合法状态。
+    const r = await retrieveReferences('隐函数求导 dy/dx');
+    assert.ok(['ok', 'empty', 'unavailable'].includes(r.status));
   } finally {
     env.RAG_EMBED_MODEL = prev; // 还原，避免影响其他用例
   }
 });
 
-test('getAllQbankForEmbedding 仅返回未完成项（断点续跑）', () => {
-  seedIndexed();
+test('getAllQbankForEmbedding 仅返回未完成项（断点续跑）', async () => {
+  await seedIndexed();
   // 两条都已 done → 不应再出现在待嵌入列表
   const pending = getAllQbankForEmbedding();
   assert.ok(!pending.some((p) => p.item_id === 'M-impl-diff'));

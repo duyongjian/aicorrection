@@ -4,6 +4,9 @@
  * 取 embedding_status<>'done' 或 vec 为空的题库项 → 离线嵌入 → 写回向量并置 status='done'。
  * 可断点续跑：已 'done' 的项会被跳过，重复执行只补建新增/失败项。
  *
+ * embed 现支持 local-hash（默认）/ bge（本地 onnx）两种方案，由 RAG_EMBED_MODEL 切换。
+ * 切到 bge（1024 维）后首次运行本脚本即重建全部向量；旧 384 维向量需重跑本脚本覆盖。
+ *
  * 用法：
  *   tsx src/scripts/buildQbankIndex.ts
  */
@@ -13,7 +16,7 @@ import { embed, embedItemSource } from '../services/rag/embeddingService';
 import { upsertVec } from '../services/rag/vectorStore';
 import { env } from '../config/env';
 
-function main(): void {
+async function main(): Promise<void> {
   // 触发迁移，确保表与列存在
   getDb();
 
@@ -30,7 +33,7 @@ function main(): void {
   let skipped = 0;
   for (const item of pending) {
     try {
-      const vec = embed(embedItemSource(item));
+      const vec = await embed(embedItemSource(item));
       upsertVec(item.item_id, vec); // 落 vec + 置 status='done' + 记录 model
       done++;
     } catch (e) {
@@ -44,4 +47,7 @@ function main(): void {
   );
 }
 
-main();
+main().catch((e) => {
+  console.error(`[buildQbankIndex] 失败：${(e as Error).message}`);
+  process.exit(1);
+});

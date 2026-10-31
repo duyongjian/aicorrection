@@ -48,7 +48,7 @@ export async function retrieveReferences(
   }
 
   try {
-    const vec = embed(question);
+    const vec = await embed(question);
     const k = opts.topK ?? env.RAG_TOP_K;
     const minScore = opts.minScore ?? env.RAG_MIN_SCORE;
 
