@@ -42,6 +42,19 @@ test('sanitizeSearchQuery 剔除作答/PII 并截断', () => {
   assert.ok(sanitizeSearchQuery(longQ).length <= 80, '超长应截断');
 });
 
+test('sanitizeSearchQuery 优先用知识点作检索词（P2 增强）', () => {
+  const q = sanitizeSearchQuery(
+    'Find dy/dx if x^2 + y^2 = 25',
+    'I got x/y but unsure',
+    'math',
+    '隐函数求导（链式法则）'
+  );
+  assert.ok(q.includes('隐函数求导'), '应优先用知识点作检索词');
+  assert.ok(!q.includes('Find dy/dx'), '原始题干不应出现在检索词中');
+  assert.ok(q.includes('math'), '学科前缀保留');
+  assert.ok(!q.includes('I got x/y'), '学生作答绝不出现');
+});
+
 test('parseBing 抽取标题/链接/摘要', () => {
   const r = parseBing(BING_HTML);
   assert.equal(r.length, 2);

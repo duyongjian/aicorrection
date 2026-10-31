@@ -77,6 +77,13 @@ export const env = {
   // 300s 留约 1.8x 余量；追问走同一强模型，180s 留约 1.1x（追问更短）。
   ATTRIBUTION_TIMEOUT_MS: toNum(process.env.ATTRIBUTION_TIMEOUT_MS, 300_000),
   FOLLOWUP_TIMEOUT_MS: toNum(process.env.FOLLOWUP_TIMEOUT_MS, 180_000),
+  /**
+   * 分析强模型（27B）重试次数（"先重试再降级"策略，见 attributionService）。
+   * 仅对"传输/连接"类快失败重试（模型崩了/没起来/瞬间 5xx）；对完整生成超时（模型在跑但慢）
+   * 不重试 —— 重试只会再等一个完整超时预算，无意义。重试耗尽仍失败 → 诚实降级（analyzing）+ 本地告警（plan C）。
+   * 默认 2（即首次 + 2 次重试 = 最多 3 次尝试）。
+   */
+  ANALYSIS_MAX_RETRIES: toNum(process.env.ANALYSIS_MAX_RETRIES, 2),
   OCR_TIMEOUT_MS: toNum(process.env.OCR_TIMEOUT_MS, 30_000),
 
   // ---- 本地 OCR（Python 子进程，纯 CPU，非视觉大模型）----
@@ -134,16 +141,27 @@ export const env = {
   RAG_TOP_K: toNum(process.env.RAG_TOP_K, 4),
   /** 余弦相似度最低阈值：低于此值视为"不相关"丢弃（0 = 全保留） */
   RAG_MIN_SCORE: toNum(process.env.RAG_MIN_SCORE, 0.0),
-  /** 嵌入方案：local-hash（默认，确定性零依赖）| bge（预留 TODO） */
+  /** 嵌入方案：local-hash（默认，确定性零依赖）| bge（本地 onnx，语义更强，见 BGE_*） */
   RAG_EMBED_MODEL: process.env.RAG_EMBED_MODEL ?? 'local-hash',
   /** 归因时 RAG 检索的独立超时（检索慢/挂掉也不应拖垮归因，超时即跳过参考块） */
   RAG_TIMEOUT_MS: toNum(process.env.RAG_TIMEOUT_MS, 8_000),
 
-  // ---- 联网搜索（P2，默认关闭）----
-  // 数据主权铁律硬约束：默认 false —— 绝不把用户内容（题干/作答）外发到第三方搜索引擎。
-  // 仅当用户显式开启，且只外发"脱敏后的主题词"（学科 + 知识点，绝不含学生作答/姓名/PII）。
-  // 审计日志仅落本地 data/websearch_audit.log，不离开本机。
-  WEB_SEARCH_ENABLED: toBool(process.env.WEB_SEARCH_ENABLED, false),
+  // ---- 本地语义嵌入（BGE，RAG_EMBED_MODEL=bge 时生效）----
+  // 性能最强且离线可用的中文语义嵌入：bge-m3（BAAI，1024 维稠密 + 稀疏，中英混合）。
+  // 本地 onnx 推理（onnxruntime-node），模型文件放 BGE_MODEL_DIR，不依赖外网/不违离线。
+  // 切到 bge 后需重跑 rag:import / rag:index 重建向量（维度与 local-hash 不同）。
+  // 若 BGE_MODEL_DIR 下无模型文件，embeddingService 自动回落 local-hash（绝不因缺模型而崩）。
+  BGE_MODEL_DIR: path.resolve(__dirname, '../data/bge-m3-onnx'),
+  /** bge-m3 稠密向量维度（固定 1024；切换其它 bge 模型需同步修改） */
+  BGE_DIM: toNum(process.env.BGE_DIM, 1024),
+  /** onnx 推理执行提供方：cpu（默认，稳）| cuda（有独显且装了 onnxruntime 的 GPU 包时可选） */
+  BGE_DEVICE: (process.env.BGE_DEVICE ?? 'cpu') as 'cpu' | 'cuda',
+
+  // ---- 联网搜索（P2，默认开启）----
+  // 数据主权铁律硬约束：默认开启，但脱敏保证不变 —— 仍只外发"学科 + 知识点主题词"，
+  // 绝不外发学生作答 / 姓名 / 手机号 / 邮箱等 PII；审计日志仅落本地 data/websearch_audit.log，
+  // 不离开本机。开启后仅作"仅供参考"的 grounding，不参与三行契约解析。
+  WEB_SEARCH_ENABLED: toBool(process.env.WEB_SEARCH_ENABLED, true),
   /** 检索提供方：engine-html（默认，无 key，抓 Bing/DuckDuckGo 等搜索页）| searxng（自托管，返回 JSON，更稳） */
   WEB_SEARCH_PROVIDER: (process.env.WEB_SEARCH_PROVIDER ?? 'engine-html') as
     | 'engine-html'

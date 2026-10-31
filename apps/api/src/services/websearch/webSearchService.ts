@@ -28,11 +28,20 @@ const ENGINE_URL: Record<string, string> = {
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36';
 
+/** 引擎 fallback 顺序：主引擎优先，其余按固定顺序补充（主引擎失败/空时自动切下一个）。 */
+function engineFallbackOrder(primary: string): string[] {
+  const all = ['bing', 'duckduckgo', 'baidu', 'google'];
+  if (!all.includes(primary)) return [primary, ...all.filter((e) => e !== primary)];
+  return [primary, ...all.filter((e) => e !== primary)];
+}
+
 export interface RetrieveWebSearchOptions {
   /** 学科过滤 / 透传给脱敏 */
   subject?: string;
   /** 学生作答（刻意不用于外发，仅占位以明确语义） */
   userAnswer?: string;
+  /** 来自 RAG 命中的题库知识点（干净学科术语）；优先用作检索词，召回更精准 */
+  knowledgePoint?: string;
   maxResults?: number;
   timeoutMs?: number;
 }
@@ -91,8 +100,8 @@ export async function retrieveWebSearch(
     return { status: 'empty', source: 'web', items: [] };
   }
 
-  // 脱敏：只发学科 + 知识点主题词；外发内容绝不含学生作答 / PII。
-  const query = sanitizeSearchQuery(question, opts.userAnswer, opts.subject);
+  // 脱敏：优先用知识点（来自 RAG 命中），否则题干；外发内容绝不含学生作答 / PII。
+  const query = sanitizeSearchQuery(question, opts.userAnswer, opts.subject, opts.knowledgePoint);
   if (!query) return { status: 'empty', source: 'web', items: [] };
 
   const maxResults = opts.maxResults ?? env.WEB_SEARCH_MAX_RESULTS;
@@ -100,12 +109,42 @@ export async function retrieveWebSearch(
   const t0 = Date.now();
 
   try {
-    let raw: WebSearchRaw[];
+    let raw: WebSearchRaw[] = [];
+    let usedEngine = '';
     if (env.WEB_SEARCH_PROVIDER === 'searxng') {
       if (!env.WEB_SEARCH_SEARXNG_URL) throw new Error('searxng 实例地址未配置');
       raw = await searchSearXNG(env.WEB_SEARCH_SEARXNG_URL, query, timeoutMs);
+      usedEngine = 'searxng';
     } else {
-      raw = await searchEngineHtml(env.WEB_SEARCH_ENGINE, query, timeoutMs);
+      // 多引擎 fallback：主引擎失败/空 → 自动切下一个（bing→duckduckgo→baidu→google），
+      // 提升可用性；任一异常绝不外泄、绝不中断归因。
+      const order = engineFallbackOrder(env.WEB_SEARCH_ENGINE);
+      let anyError = false;
+      for (const engine of order) {
+        try {
+          const r = await searchEngineHtml(engine, query, timeoutMs);
+          if (r.length > 0) {
+            raw = r;
+            usedEngine = engine;
+            break;
+          }
+          logWebSearchAudit({
+            ts: new Date().toISOString(),
+            query,
+            provider: env.WEB_SEARCH_PROVIDER,
+            engine,
+            result_count: 0,
+            duration_ms: Date.now() - t0,
+            note: 'empty, try next',
+          });
+        } catch {
+          anyError = true;
+          continue;
+        }
+      }
+      if (raw.length === 0 && anyError) {
+        throw new Error('all engines failed'); // 落外层 catch → unavailable（绝不虚构）
+      }
     }
 
     const items: AttributionWebSearchItem[] = raw
@@ -121,7 +160,7 @@ export async function retrieveWebSearch(
       ts: new Date().toISOString(),
       query,
       provider: env.WEB_SEARCH_PROVIDER,
-      engine: env.WEB_SEARCH_ENGINE,
+      engine: usedEngine || env.WEB_SEARCH_ENGINE,
       result_count: items.length,
       duration_ms: Date.now() - t0,
     });

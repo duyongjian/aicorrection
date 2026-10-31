@@ -11,9 +11,32 @@ import { createAttribution } from '../../models/attributionModel';
 import { generateAttributionId } from '../../utils/id';
 import { withTimeout } from '../../utils/promise';
 import { TIMEOUT } from '../../config/timeout';
+import fs from 'node:fs';
+import path from 'node:path';
 import { MOCK_ATTR_MODEL_VERSION } from '@aicorrection/shared';
 import type { AttributionData } from '@aicorrection/shared';
-import type { LlmMessage } from '../llm/provider';
+import type { LlmMessage, LlmResult } from '../llm/provider';
+
+/**
+ * 分析强模型（27B）失败本地告警（plan C 的"告警"环节）。
+ * 仅落本地 data/analysis_failure.log，不离开本机；best-effort，失败不影响主流程。
+ * 运维/自动重启可监听此日志触发 8085 实例重建。
+ */
+function logAnalysisFailure(entry: {
+  ts: string;
+  model: string;
+  attempts: number;
+  error: string;
+}): void {
+  try {
+    fs.appendFileSync(
+      path.join(env.DATA_DIR, 'analysis_failure.log'),
+      JSON.stringify(entry) + '\n'
+    );
+  } catch {
+    /* 审计失败不影响主流程 */
+  }
+}
 import {
   ATTR_SYSTEM,
   attrUserPrompt,
@@ -41,21 +64,11 @@ export async function generateAttribution(
   // 归因分析走独立的分析 provider（ANALYSIS_*，可指向另一个本地强模型）
   const provider = getAnalysisProvider();
 
-  // 题库 RAG 参考块（P1）：调用分析 provider **之前**并行发起检索，
-  // 带独立超时 RAG_TIMEOUT_MS（默认 8s）。超时/失败→不注入参考块，归因照常进行。
+  // 题库 RAG 参考块（P1）：带独立超时 RAG_TIMEOUT_MS（默认 8s）。超时/失败→不注入参考块，归因照常进行。
+  // 注：web 搜索在 RAG 之后发起（用 RAG 命中的知识点作检索词），故此处只起 RAG。
   const ragPromise = withTimeout(
     retrieveReferences(input.question, { subject: input.subject }),
     env.RAG_TIMEOUT_MS
-  ).catch(() => null);
-
-  // 联网搜索参考块（P2）：与 RAG 平行发起；独立超时（默认 6s）。默认关闭（数据主权铁律），
-  // 开启后只外发脱敏主题词，失败/超时→不注入，归因照常进行。
-  const webPromise = withTimeout(
-    retrieveWebSearch(input.question, {
-      subject: input.subject,
-      userAnswer: input.user_answer,
-    }),
-    env.WEB_SEARCH_TIMEOUT_MS
   ).catch(() => null);
 
   // 知识锚点（grounding）：仅当题干/作答命中特定知识点（如非谓语分词作状语）时，
@@ -67,10 +80,25 @@ export async function generateAttribution(
       refs.join('\n---\n')
     : '';
 
-  // 等 RAG 结果返回（仅用于拼 user 消息，不阻塞 provider 准备的其余逻辑）
+  // 等 RAG 结果返回（仅用于拼 user 消息 + 派生联网检索词）
   const refResult = await ragPromise;
   const referenceBlock = refResult ? buildReferenceBlock(refResult) : '';
-  // 等联网搜索结果返回（P2，同样仅用于拼 user 消息）
+  // 用 RAG 命中的首个知识点作为联网检索词（远比原始题干精准），提升召回质量（P2 增强）。
+  const topKp =
+    refResult && refResult.status === 'ok' && refResult.items?.[0]?.knowledge_point
+      ? refResult.items[0].knowledge_point
+      : undefined;
+  // 联网搜索参考块（P2）：默认开启（脱敏保证不变）；失败/超时/关闭→不注入，归因照常进行。
+  // 检索词优先用 RAG 知识点，无命中则退回脱敏题干。
+  const webPromise = withTimeout(
+    retrieveWebSearch(input.question, {
+      subject: input.subject,
+      userAnswer: input.user_answer,
+      knowledgePoint: topKp,
+    }),
+    env.WEB_SEARCH_TIMEOUT_MS
+  ).catch(() => null);
+  // 等联网搜索结果返回（P2，仅用于拼 user 消息）
   const webResult = await webPromise;
   const webBlock = webResult ? buildWebSearchBlock(webResult) : '';
   const userContent = attrUserPrompt(
@@ -107,20 +135,47 @@ export async function generateAttribution(
     return true;
   };
 
-  try {
-    const res = await withTimeout(
-      // max_tokens 1536：按分析强模型 ~3 tok/s 估算，4096 token 需 ~1400s，
-      // 远超 300s 超时预算（等于必然超时）；实测正常归因仅 448 token，
-      // 1536 留约 3x 余量。真触发截断时由 parseAttrTriple 判定缺项 → 返回
-      // incomplete（诚实失败，绝不补假数据）。
-      provider.chat(messages, { maxTokens: 1536 }),
-      TIMEOUT.ATTRIBUTION_MS
-    );
-    text = res.text;
-    latencyMs = res.latencyMs;
-    if (provider.name !== 'mock') modelVersion = res.model || provider.name;
-  } catch {
-    // 真实模型超时/异常 → 运行时 Mock 兜底；仅当关闭兜底时才返回 analyzing 降级态
+  // 27B 出问题"先重试再降级"（plan C 前置）：仅对"传输/连接"类快失败重试
+  // （模型崩了/没起来/瞬间 5xx）；对完整生成超时（模型在跑但慢）不重试 —— 再等一个完整
+  // 超时预算无意义。重试耗尽仍失败 → 诚实降级（analyzing）+ 本地告警（供运维/自动重启 8085）。
+  let analysisRes: LlmResult | null = null;
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt <= env.ANALYSIS_MAX_RETRIES; attempt++) {
+    try {
+      analysisRes = await withTimeout(
+        // max_tokens 1536：按分析强模型 ~3 tok/s 估算，4096 token 需 ~1400s，
+        // 远超 300s 超时预算（等于必然超时）；实测正常归因仅 448 token，
+        // 1536 留约 3x 余量。真触发截断时由 parseAttrTriple 判定缺项 → 返回
+        // incomplete（诚实失败，绝不补假数据）。
+        provider.chat(messages, { maxTokens: 1536 }),
+        TIMEOUT.ATTRIBUTION_MS
+      );
+      break;
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      const isTimeout = /timeout|timed out|aborted|abort/i.test(msg);
+      if (attempt < env.ANALYSIS_MAX_RETRIES && !isTimeout) {
+        await new Promise((r) => setTimeout(r, 800 * (attempt + 1))); // 短退避后重试
+        continue;
+      }
+      break;
+    }
+  }
+
+  if (analysisRes) {
+    text = analysisRes.text;
+    latencyMs = analysisRes.latencyMs;
+    if (provider.name !== 'mock') modelVersion = analysisRes.model || provider.name;
+  } else {
+    // 重试耗尽 → plan C：诚实降级 + 本地告警（不编造、不静默）。
+    logAnalysisFailure({
+      ts: new Date().toISOString(),
+      model: env.ANALYSIS_MODEL,
+      attempts: env.ANALYSIS_MAX_RETRIES + 1,
+      error: lastErr instanceof Error ? lastErr.message : String(lastErr),
+    });
+    // 真实模型不可达 → 运行时 Mock 兜底（仅当显式开启）；否则返回 analyzing 降级态。
     if (!(await fallbackToMock())) {
       return { status: 'analyzing' };
     }

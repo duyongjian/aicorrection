@@ -9,9 +9,11 @@
  */
 
 /**
- * 从题干（+学科）中提取可外发的脱敏检索词。
+ * 从题干/知识点（+学科）中提取可外发的脱敏检索词。
  * - 丢弃 userAnswer（可能含个人表达/笔误，且检索并不需要）。
- * - 仅保留题干 + 学科前缀。
+ * - 优先用 knowledgePoint（来自 RAG 命中的题库知识点，已是干净学科术语）作检索词，
+ *   召回远比原始题干精准（如数学题用"隐函数求导（链式法则）"而非整段英文题干）；
+ *   无知识点时退回题干。
  * - 启发式剔除手机号 / 邮箱等 PII。
  * - 截断长度，避免整段长文本外发。
  *
@@ -20,12 +22,17 @@
 export function sanitizeSearchQuery(
   question: string,
   userAnswer?: string,
-  subject?: string
+  subject?: string,
+  knowledgePoint?: string
 ): string {
   void userAnswer; // 刻意不使用：学生作答绝不外发
-  let q = (question || '').replace(/\s+/g, ' ').trim();
+  // 优先知识点（来自题库，干净且聚焦）；无则退回题干。
+  const base = (knowledgePoint && knowledgePoint.trim())
+    ? knowledgePoint.trim()
+    : (question || '').trim();
+  let q = base.replace(/\s+/g, ' ').trim();
   if (subject) q = `${subject} ${q}`;
-  // 启发式剔除 PII
+  // 启发式剔除 PII（KP 路径多为干净术语，此步无害；题干路径必需）
   q = q.replace(/(?:\+?86)?1[3-9]\d{9}/g, ''); // 手机号
   q = q.replace(/[\w.+-]+@[\w-]+\.[\w.-]+/g, ''); // 邮箱
   q = q.replace(/\b\d{15,18}\b/g, ''); // 疑似身份证/长数字串
