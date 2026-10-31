@@ -3,7 +3,7 @@
  * 统一输出格式约定：错因 / 知识点 / 本质 三行，便于解析与缺项判定。
  * [FOLLOWUP_MODE] 为 Mock 分支哨兵。
  */
-import type { AttributionReference } from '@aicorrection/shared';
+import type { AttributionReference, AttributionWebSearch } from '@aicorrection/shared';
 
 export const ATTR_SYSTEM = `你是一名资深学科诊断教练，擅长"触及本质"的错因诊断（而非浅标签）。
 请基于题干（及可选的用户作答）输出三项结构化诊断。
@@ -63,6 +63,32 @@ export function buildReferenceBlock(ref: AttributionReference): string {
   }
   lines.push(
     '要求：以上为相似题的参考诊断要点，仅供你对照参考。你不得原样照抄其答案作为本题结论；本题结论必须基于本题干与作答独立推导；若以上参考与本题无关，请完全忽略。'
+  );
+  return lines.join('\n');
+}
+
+/**
+ * 把联网搜索结果渲染为"参考块"文本，注入到 user 消息（P2）。
+ *
+ * 与题库参考块同约束：
+ *  - 不出现契约标记词（错因/错误原因/知识点/本质），避免污染最终三行解析；
+ *  - 明确告知模型：不得照抄作为本题结论；须基于本题干独立推导；无关则忽略。
+ *  - 仅当 status==='ok' 且含条目时渲染；其余返回空串（不注入）。
+ *
+ * 说明：网络资料可能含错误或不严谨内容，故措辞上更强调"仅供参考、必须独立验证"。
+ * 展示标签用"网络检索参考"，不进契约标记词。
+ */
+export function buildWebSearchBlock(ref: AttributionWebSearch): string {
+  if (ref.status !== 'ok' || ref.items.length === 0) return '';
+  const lines: string[] = [];
+  lines.push('【网络检索参考（公开资料要点，仅供参考，非本题答案）】');
+  for (const it of ref.items) {
+    lines.push(`- ${it.title}`);
+    if (it.snippet) lines.push(`  摘要：${it.snippet}`);
+    if (it.url) lines.push(`  来源：${it.url}`);
+  }
+  lines.push(
+    '要求：以上为公开网络资料的检索要点，仅供参考。你必须基于本题干与作答独立推导，对网络内容需自行判断正确性，不得原样照抄其结论；若检索内容与本题无关，请完全忽略。'
   );
   return lines.join('\n');
 }

@@ -138,4 +138,28 @@ export const env = {
   RAG_EMBED_MODEL: process.env.RAG_EMBED_MODEL ?? 'local-hash',
   /** 归因时 RAG 检索的独立超时（检索慢/挂掉也不应拖垮归因，超时即跳过参考块） */
   RAG_TIMEOUT_MS: toNum(process.env.RAG_TIMEOUT_MS, 8_000),
+
+  // ---- 联网搜索（P2，默认关闭）----
+  // 数据主权铁律硬约束：默认 false —— 绝不把用户内容（题干/作答）外发到第三方搜索引擎。
+  // 仅当用户显式开启，且只外发"脱敏后的主题词"（学科 + 知识点，绝不含学生作答/姓名/PII）。
+  // 审计日志仅落本地 data/websearch_audit.log，不离开本机。
+  WEB_SEARCH_ENABLED: toBool(process.env.WEB_SEARCH_ENABLED, false),
+  /** 检索提供方：engine-html（默认，无 key，抓 Bing/DuckDuckGo 等搜索页）| searxng（自托管，返回 JSON，更稳） */
+  WEB_SEARCH_PROVIDER: (process.env.WEB_SEARCH_PROVIDER ?? 'engine-html') as
+    | 'engine-html'
+    | 'searxng',
+  /** engine-html 模式下的默认引擎：bing | duckduckgo | baidu | google */
+  WEB_SEARCH_ENGINE: (process.env.WEB_SEARCH_ENGINE ?? 'bing') as
+    | 'bing'
+    | 'duckduckgo'
+    | 'baidu'
+    | 'google',
+  /** searxng 提供方时的实例地址（需其开启 json 输出），如 http://localhost:8082/search */
+  WEB_SEARCH_SEARXNG_URL: process.env.WEB_SEARCH_SEARXNG_URL ?? '',
+  /** 返回条数 */
+  WEB_SEARCH_MAX_RESULTS: toNum(process.env.WEB_SEARCH_MAX_RESULTS, 5),
+  /** 单次检索超时（对外网络，留比 RAG 更紧的余量，避免拖垮归因） */
+  WEB_SEARCH_TIMEOUT_MS: toNum(process.env.WEB_SEARCH_TIMEOUT_MS, 6_000),
+  /** 是否写本地审计日志（默认开；仅本地，不离开本机） */
+  WEB_SEARCH_AUDIT: toBool(process.env.WEB_SEARCH_AUDIT, true),
 };

@@ -18,10 +18,12 @@ import {
   ATTR_SYSTEM,
   attrUserPrompt,
   buildReferenceBlock,
+  buildWebSearchBlock,
   parseAttrTriple,
 } from './prompt';
 import { getKnowledgeReferences } from './references';
 import { retrieveReferences } from '../rag/ragService';
+import { retrieveWebSearch } from '../websearch/webSearchService';
 
 export interface AttrInput {
   loop_id: string;
@@ -46,6 +48,16 @@ export async function generateAttribution(
     env.RAG_TIMEOUT_MS
   ).catch(() => null);
 
+  // 联网搜索参考块（P2）：与 RAG 平行发起；独立超时（默认 6s）。默认关闭（数据主权铁律），
+  // 开启后只外发脱敏主题词，失败/超时→不注入，归因照常进行。
+  const webPromise = withTimeout(
+    retrieveWebSearch(input.question, {
+      subject: input.subject,
+      userAnswer: input.user_answer,
+    }),
+    env.WEB_SEARCH_TIMEOUT_MS
+  ).catch(() => null);
+
   // 知识锚点（grounding）：仅当题干/作答命中特定知识点（如非谓语分词作状语）时，
   // 在 system 消息尾部拼接人工核查要点，引导模型先复核主谓语态、避免系统性误判。
   // 锚点不计入最终三行结论，也不出现契约标记词，故不污染 parseAttrTriple 解析。
@@ -58,7 +70,14 @@ export async function generateAttribution(
   // 等 RAG 结果返回（仅用于拼 user 消息，不阻塞 provider 准备的其余逻辑）
   const refResult = await ragPromise;
   const referenceBlock = refResult ? buildReferenceBlock(refResult) : '';
-  const userContent = attrUserPrompt(input.question, input.user_answer, referenceBlock);
+  // 等联网搜索结果返回（P2，同样仅用于拼 user 消息）
+  const webResult = await webPromise;
+  const webBlock = webResult ? buildWebSearchBlock(webResult) : '';
+  const userContent = attrUserPrompt(
+    input.question,
+    input.user_answer,
+    referenceBlock ? `${referenceBlock}\n${webBlock}` : webBlock
+  );
 
   const messages: LlmMessage[] = [
     { role: 'system', content: ATTR_SYSTEM + refsBlock },
@@ -154,5 +173,7 @@ export async function generateAttribution(
     complete: true,
     // P1：带回题库参考块（若本次命中/已检索）。超时或未命中时 refResult 为 null → 不附。
     references: refResult ?? undefined,
+    // P2：带回联网搜索参考块（若开启且命中）。关闭/失败/未命中时 webResult 为 null → 不附。
+    webSearch: webResult ?? undefined,
   };
 }

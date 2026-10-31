@@ -185,6 +185,9 @@ export interface AttributionOkData {
   /** P1: 题库 RAG 参考块。命中相似题时带回（source='qbank'），供前端展示"诊断依据"；
    *  未命中 / 关闭 / 检索失败时为 undefined。绝不虚构内容。 */
   references?: AttributionReference;
+  /** P2: 联网搜索参考块（默认关闭）。开启且命中时带回（source='web'），供前端展示"网络依据"；
+   *  关闭 / 失败 / 未命中时为 undefined。绝不虚构内容。 */
+  webSearch?: AttributionWebSearch;
 }
 
 export interface AttributionDegradedData {
@@ -221,6 +224,34 @@ export interface AttributionReference {
   status: 'ok' | 'empty' | 'unavailable';
   source: 'qbank';
   items: AttributionReferenceItem[];
+}
+
+// ===================== 联网搜索参考块 (P2) =====================
+
+/** 单条网络检索结果（来自搜索引擎）。 */
+export interface AttributionWebSearchItem {
+  /** 结果标题 */
+  title: string;
+  /** 来源链接 */
+  url: string;
+  /** 摘要片段（截断，约 200 字），仅供对照，非本题答案 */
+  snippet: string;
+  /** 相似度/相关性占位（搜索引擎无余弦分，置 1 或省略） */
+  score?: number;
+}
+
+/**
+ * 联网搜索检索结果信封（P2）。
+ * 与题库 RAG 同契约：
+ *  - 'ok'        检索成功且命中，items 非空；
+ *  - 'empty'     已检索但无结果（或功能关闭/未配置），items=[]；
+ *  - 'unavailable' 检索异常（网络/解析失败/超时）→ 仅跳过，归因照常，绝不抛错/虚构。
+ * source 固定 'web'（预留扩展：未来可接多个搜索引擎聚合）。
+ */
+export interface AttributionWebSearch {
+  status: 'ok' | 'empty' | 'unavailable';
+  source: 'web';
+  items: AttributionWebSearchItem[];
 }
 
 // ===================== 认可/评分 (R03 / ATT-04) =====================
