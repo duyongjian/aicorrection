@@ -267,7 +267,11 @@ async function main(): Promise<void> {
   }
 
   // 触发迁移，确保 qbank_items 表与新列存在
-  getDb();
+  const db = getDb();
+  // 批量重建优化：本题库为本地可重跑的离线重建，关闭逐提交 fsync
+  // （WAL + synchronous=OFF），避免 1.4 万条 updateEmbedding 的同步写阻塞；
+  // 若中途崩溃，已落盘的进度仍可经本脚本重跑续建。
+  db.pragma('synchronous = OFF');
 
   const content = fs.readFileSync(file, 'utf-8');
   const records = parseCsv(content);
@@ -297,24 +301,28 @@ async function main(): Promise<void> {
 
     bySubject[subject] = (bySubject[subject] ?? 0) + 1;
 
-    insertQbankItem({
-      item_id: qid,
-      subject,
-      question_text: question,
-      answer_text: answerText,
-      // 知识点记为 MMMLU 原始学科名（便于溯源）；如需中文知识点可由标注环节补充。
-      knowledge_point: mmuluSubject,
-      solution_steps: null,
-      grade_level: null,
-      difficulty: DEFAULT_DIFFICULTY,
-      source: SOURCE,
-      license: LICENSE,
-      cause_tags_json: null,
-      snippet: null,
-      review_status: REVIEW_STATUS,
-      contributor_hash: null,
-      votes: 0,
-    });
+    // 幂等导入：已存在的题保留其既有向量（不重置），仅新增不存在的题。
+    // 这样重跑本脚本是安全的续跑——已 done 的题不会被 INSERT OR REPLACE 清掉重嵌。
+    if (!getQbankById(qid)) {
+      insertQbankItem({
+        item_id: qid,
+        subject,
+        question_text: question,
+        answer_text: answerText,
+        // 知识点记为 MMMLU 原始学科名（便于溯源）；如需中文知识点可由标注环节补充。
+        knowledge_point: mmuluSubject,
+        solution_steps: null,
+        grade_level: null,
+        difficulty: DEFAULT_DIFFICULTY,
+        source: SOURCE,
+        license: LICENSE,
+        cause_tags_json: null,
+        snippet: null,
+        review_status: REVIEW_STATUS,
+        contributor_hash: null,
+        votes: 0,
+      });
+    }
     inserted++;
   }
 

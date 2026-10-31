@@ -18,7 +18,10 @@ import { env } from '../config/env';
 
 async function main(): Promise<void> {
   // 触发迁移，确保表与列存在
-  getDb();
+  const db = getDb();
+  // 批量重建优化：关闭逐提交 fsync（WAL + synchronous=OFF），避免大批量
+  // 向量回写被同步写阻塞；本题库为本地可重跑重建，若中途崩溃可安全重跑续建。
+  db.pragma('synchronous = OFF');
 
   const pending = getAllQbankForEmbedding();
   if (pending.length === 0) {
