@@ -126,4 +126,16 @@ export const env = {
   UPLOAD_DIR:
     process.env.UPLOAD_DIR ??
     path.resolve(__dirname, '../data/uploads'),
+
+  // ---- 题库 RAG（P1）----
+  // 默认开启：确定性离线 hash 嵌入 + 纯 SQLite 余弦，零模型下载、零原生依赖。
+  RAG_ENABLED: toBool(process.env.RAG_ENABLED, true),
+  /** 每次检索返回的候选条数 */
+  RAG_TOP_K: toNum(process.env.RAG_TOP_K, 4),
+  /** 余弦相似度最低阈值：低于此值视为"不相关"丢弃（0 = 全保留） */
+  RAG_MIN_SCORE: toNum(process.env.RAG_MIN_SCORE, 0.0),
+  /** 嵌入方案：local-hash（默认，确定性零依赖）| bge（预留 TODO） */
+  RAG_EMBED_MODEL: process.env.RAG_EMBED_MODEL ?? 'local-hash',
+  /** 归因时 RAG 检索的独立超时（检索慢/挂掉也不应拖垮归因，超时即跳过参考块） */
+  RAG_TIMEOUT_MS: toNum(process.env.RAG_TIMEOUT_MS, 8_000),
 };

@@ -7,10 +7,10 @@ build/
 *.tsbuildinfo
 
 # Local data (SQLite + uploads) — never commit
-apps/api/data/*.db
-apps/api/data/*.db-journal
-apps/api/data/*.db-wal
-apps/api/data/uploads/
+# 注意：运行时 DATA_DIR 由 env.ts 解析为 apps/api/src/data/（__dirname/../data，tsx 直接跑 src）
+# 故此处需同时覆盖 src/data 与（构建后）data 两种路径。
+apps/api/src/data/
+apps/api/data/
 apps/api/.env
 
 # Env files

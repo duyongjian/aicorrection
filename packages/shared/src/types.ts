@@ -182,6 +182,9 @@ export interface AttributionOkData {
   attr_model_version: string;
   attr_latency_ms: number;
   complete: true;
+  /** P1: 题库 RAG 参考块。命中相似题时带回（source='qbank'），供前端展示"诊断依据"；
+   *  未命中 / 关闭 / 检索失败时为 undefined。绝不虚构内容。 */
+  references?: AttributionReference;
 }
 
 export interface AttributionDegradedData {
@@ -189,6 +192,36 @@ export interface AttributionDegradedData {
 }
 
 export type AttributionData = AttributionOkData | AttributionDegradedData;
+
+// ===================== 题库 RAG 参考块 (P1) =====================
+
+/** 单条参考项（来自题库 qbank_items）。 */
+export interface AttributionReferenceItem {
+  /** 题库项 ID */
+  item_id: string;
+  /** 展示标题：等于 knowledge_point 文本 */
+  title: string;
+  /** 参考片段（answer_text 截断，约 240 字），仅供对照，非本题答案 */
+  snippet: string;
+  /** 结构化知识点文本（与 title 同源，便于前端按知识点聚合） */
+  knowledge_point: string;
+  /** 余弦相似度（已四舍五入至 4 位） */
+  score: number;
+}
+
+/**
+ * 题库 RAG 检索结果信封。
+ * status:
+ *  - 'ok'        命中且高于阈值，items 非空；
+ *  - 'empty'     已检索但无高于阈值项（或库为空），items=[]；
+ *  - 'unavailable' 检索异常（嵌入/DB 失败）→ 仅跳过参考块，归因照常进行，绝不抛错/虚构。
+ * source 固定 'qbank'（预留扩展：未来可接外部知识库）。
+ */
+export interface AttributionReference {
+  status: 'ok' | 'empty' | 'unavailable';
+  source: 'qbank';
+  items: AttributionReferenceItem[];
+}
 
 // ===================== 认可/评分 (R03 / ATT-04) =====================
 

@@ -21,4 +21,19 @@ export function getDb(): Database.Database {
   return db;
 }
 
+/**
+ * 测试 / 诊断用：关闭并清空单例，使下次 getDb() 按当前 env.DB_PATH 重新打开。
+ * 生产代码不应调用；env.DB_PATH 在导入时已快照，切换测试库需同时修改 env.DB_PATH。
+ */
+export function __resetDbSingleton(): void {
+  if (db) {
+    try {
+      db.close();
+    } catch {
+      /* ignore */
+    }
+    db = null;
+  }
+}
+
 export type { Database };

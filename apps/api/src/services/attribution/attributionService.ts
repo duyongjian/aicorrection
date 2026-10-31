@@ -17,9 +17,11 @@ import type { LlmMessage } from '../llm/provider';
 import {
   ATTR_SYSTEM,
   attrUserPrompt,
+  buildReferenceBlock,
   parseAttrTriple,
 } from './prompt';
 import { getKnowledgeReferences } from './references';
+import { retrieveReferences } from '../rag/ragService';
 
 export interface AttrInput {
   loop_id: string;
@@ -36,7 +38,13 @@ export async function generateAttribution(
 ): Promise<AttributionData> {
   // 归因分析走独立的分析 provider（ANALYSIS_*，可指向另一个本地强模型）
   const provider = getAnalysisProvider();
-  const userContent = attrUserPrompt(input.question, input.user_answer);
+
+  // 题库 RAG 参考块（P1）：调用分析 provider **之前**并行发起检索，
+  // 带独立超时 RAG_TIMEOUT_MS（默认 8s）。超时/失败→不注入参考块，归因照常进行。
+  const ragPromise = withTimeout(
+    retrieveReferences(input.question, { subject: input.subject }),
+    env.RAG_TIMEOUT_MS
+  ).catch(() => null);
 
   // 知识锚点（grounding）：仅当题干/作答命中特定知识点（如非谓语分词作状语）时，
   // 在 system 消息尾部拼接人工核查要点，引导模型先复核主谓语态、避免系统性误判。
@@ -46,6 +54,11 @@ export async function generateAttribution(
     ? '\n\n【知识锚点（仅供你参考 grounding，不要原样复述，也不计入最终三行结论）】\n' +
       refs.join('\n---\n')
     : '';
+
+  // 等 RAG 结果返回（仅用于拼 user 消息，不阻塞 provider 准备的其余逻辑）
+  const refResult = await ragPromise;
+  const referenceBlock = refResult ? buildReferenceBlock(refResult) : '';
+  const userContent = attrUserPrompt(input.question, input.user_answer, referenceBlock);
 
   const messages: LlmMessage[] = [
     { role: 'system', content: ATTR_SYSTEM + refsBlock },
@@ -139,5 +152,7 @@ export async function generateAttribution(
     attr_model_version: modelVersion,
     attr_latency_ms: latencyMs,
     complete: true,
+    // P1：带回题库参考块（若本次命中/已检索）。超时或未命中时 refResult 为 null → 不附。
+    references: refResult ?? undefined,
   };
 }

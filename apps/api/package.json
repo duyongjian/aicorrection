@@ -9,7 +9,10 @@
     "dev": "tsx watch src/index.ts",
     "start": "tsx src/index.ts",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "build": "tsc --noEmit -p tsconfig.json"
+    "build": "tsc --noEmit -p tsconfig.json",
+    "rag:import": "tsx src/scripts/importQbank.ts",
+    "rag:index": "tsx src/scripts/buildQbankIndex.ts",
+    "test": "tsx --test src/"
   },
   "dependencies": {
     "@aicorrection/shared": "*",
