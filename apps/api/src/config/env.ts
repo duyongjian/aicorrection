@@ -100,6 +100,25 @@ export const env = {
   /** 本地 OCR 子进程超时（Paddle 冷启可能 17s+，比 OCR_TIMEOUT_MS 更宽松） */
   OCR_LOCAL_TIMEOUT_MS: toNum(process.env.OCR_LOCAL_TIMEOUT_MS, 60_000),
 
+  // ---- 识别端（视觉大模型）按需拉起 ----
+  // 背景：显存 8188 MiB 装不下「分析 27B」+「识别 8B」同时常驻，
+  // 同驻时分析模型大量层溢出 CPU（decode 仅 ~2.5~3 tok/s，同题归因 161s）；
+  // 腾出显存后降至 89.2s。故识别端改为按需拉起、空闲自动退出。
+  // 默认 false：不配 RECOGNITION_START_CMD 时，行为与改造前完全一致。
+  RECOGNITION_AUTOSTART: toBool(process.env.RECOGNITION_AUTOSTART, false),
+  /** 拉起识别端实例的完整命令行（detached 执行） */
+  RECOGNITION_START_CMD: process.env.RECOGNITION_START_CMD ?? '',
+  /** 拉起后等待就绪的超时（模型加载约 40s，故放宽） */
+  RECOGNITION_STARTUP_TIMEOUT_MS: toNum(
+    process.env.RECOGNITION_STARTUP_TIMEOUT_MS,
+    120_000
+  ),
+  /** 最后一次调用后空闲多久自动退出；0 = 不自动退出 */
+  RECOGNITION_IDLE_SHUTDOWN_MS: toNum(
+    process.env.RECOGNITION_IDLE_SHUTDOWN_MS,
+    600_000
+  ),
+
   DATA_DIR: path.resolve(__dirname, '../data'),
   DB_PATH:
     process.env.DB_PATH ??

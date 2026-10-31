@@ -10,6 +10,7 @@
  */
 import fs from 'node:fs';
 import { getRecognitionProvider } from '../llm';
+import { ensureRecognitionReady } from './recognitionAutostart';
 import { MockProvider } from '../llm/mockProvider';
 import { env } from '../../config/env';
 import { MOCK_ATTR_MODEL_VERSION } from '@aicorrection/shared';
@@ -100,6 +101,10 @@ export async function recognizeImage(
       }
     }
   }
+  // 识别端按需拉起：未开启自动拉起时这里是一次纯探活，行为与改造前一致。
+  // 拉起失败/超时 = 如实返回 fail，绝不产出占位假数据。
+  const ready = await ensureRecognitionReady();
+  if (!ready) return { ocr_status: 'fail', question: '', latex: null };
   return recognizeImageByLlm(imagePath);
 }
 
