@@ -15,6 +15,7 @@
  *   --variants a,b      变体（默认全部，见 promptVariants.ts）
  *   --modes diag,teach  只跑指定模式（默认沿用题目自带的 mode）
  *   --limit N           只跑前 N 题
+ *   --ids m02,m05       只跑指定题号（盯单个失败案例时用）
  *   --provider mock|real  provider（默认 mock，便于秒级自检管道）
  *   --timeout ms        单次调用超时（默认 real=300000 / mock=10000）
  *   --tag <name>        报告文件名后缀
@@ -109,6 +110,13 @@ async function main() {
   }
   const setDoc = JSON.parse(fsMod.readFileSync(SET_PATH, 'utf8'));
   let cases = Array.isArray(setDoc.cases) ? setDoc.cases : [];
+  if (args.ids) {
+    const ids = String(args.ids)
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean);
+    cases = cases.filter((c) => ids.includes(c.id));
+  }
   if (Number.isFinite(LIMIT)) cases = cases.slice(0, LIMIT);
 
   const { PROMPT_VARIANTS, resolvePrompt } = await import(
