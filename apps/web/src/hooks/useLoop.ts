@@ -39,6 +39,7 @@ export function useLoop() {
   const setLoading = useLoopStore((s) => s.setLoading);
   const setError = useLoopStore((s) => s.setError);
   const resetLoop = useLoopStore((s) => s.resetLoop);
+  const error = useLoopStore((s) => s.error);
 
   const ensureAccount = useCallback(
     async (seg: Segment): Promise<string> => {
@@ -135,7 +136,7 @@ export function useLoop() {
       }
       return data;
     } catch (e) {
-      setError('归因请求失败');
+      setError(describeError(e));
       throw e;
     } finally {
       setLoading(false);
@@ -197,5 +198,6 @@ export function useLoop() {
     rate,
     followup,
     resetLoop,
+    error,
   };
 }

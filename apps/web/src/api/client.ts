@@ -22,13 +22,12 @@ import type {
 } from '@aicorrection/shared';
 
 /**
- * 全局请求超时。必须 >= 后端 ATTRIBUTION_TIMEOUT_MS(当前 300s)，且 >=
- * 本地推理模型冷启动 + 单次归因耗时。否则会抢在模型返回前 abort 连接，
- * 前端误报"归因请求失败"（实际模型仍在算）。
- * 按分析强模型 Qwen3.8-27B @ RTX4060 8GB（~3 tok/s，thinking 关闭实测 161s）
- * 标定为 300s，与后端保持一致。本项目是离线本地重推理应用，该超时可接受。
+ * 前端全局请求超时。必须严格大于后端 ATTRIBUTION_TIMEOUT_MS（当前 300s），
+ * 留出充足缓冲：否则分析模型一旦 >300s（27B 本地模型在 8GB 显存上极易触发），
+ * 后端刚回 `analyzing`、前端已因等长的 300s 超时 abort，误报"归因请求失败"。
+ * 这里取 360s，保证后端任何 200 响应都能被前端完整收到（再慢也只是拿到 analyzing 态）。
  */
-const REQUEST_TIMEOUT_MS = 300_000;
+const REQUEST_TIMEOUT_MS = 360_000;
 
 const http = axios.create({
   baseURL: '/api/v1',
@@ -50,6 +49,16 @@ http.interceptors.response.use(
       .response;
     if (resp?.data?.message) return Promise.reject(new Error(resp.data.message));
     if (resp?.status) return Promise.reject(new Error(`请求失败（HTTP ${resp.status}）`));
+    // 超时（axios 主动 abort）或连接被拒：给出人话，避免笼统"归因请求失败"
+    const e = err as { code?: string; message?: string };
+    if (e?.code === 'ECONNABORTED' || /timeout|timed out/i.test(e?.message ?? '')) {
+      return Promise.reject(
+        new Error('请求超时：后端分析模型响应过慢或已断开，可重试或改用更小的分析模型')
+      );
+    }
+    if (/ECONNREFUSED|ENOTFOUND|Network Error/i.test(e?.message ?? '')) {
+      return Promise.reject(new Error('无法连接后端服务（:3001），请确认已运行 npm run dev'));
+    }
     return Promise.reject(err);
   }
 );

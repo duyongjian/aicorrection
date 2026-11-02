@@ -56,6 +56,15 @@ export const MAX_MALFORMED_DENSITY = 2.0;
  */
 export const MAX_MATHRM = 40;
 
+/**
+ * 第四道防线：感叹号洪流（`!` / `\!` 重复）。
+ * 背景（2026-11-02 实测）：PP-FormulaNet-S 在复杂数学图上会"跑飞"，吐出 `\!` 与 `!`
+ * 成百上千次重复（如 `{\begin{array}...\frac{1}{a\ \!{\mathbb{H}}}\ \ !!!...`），既无 strong
+ * token、也无 \mathrm 洪流、畸形密度也低，前三条判据全部漏过。正经数学 LaTeX 几乎不出现
+ * `!`（仅阶乘 `n!` 与极少量 `\!` 间距），>8 即可判定跑飞。
+ */
+export const MAX_BANGS = 8;
+
 /** 数学/LaTeX 结构信号：命中其一才认为"像公式" */
 const MATH_SIGNAL_RE =
   /\\(?:frac|int|sqrt|sum|lim|pi|infty|partial|nabla|cdot|times|div|le|ge|neq|approx|bar|hat|vec|log|ln|sin|cos|tan|alpha|beta|theta|gamma|delta|Delta|mathbb|mathcal|text|mathrm|overline|underline|begin|end)|[_^]|\=/;
@@ -82,6 +91,7 @@ export type LatexRejectReason =
   | 'garbage_token_flood'
   | 'malformed_syntax'
   | 'mathrm_flood'
+  | 'exclamation_flood'
   | 'duplicate_of_text';
 
 export interface LatexMetrics {
@@ -94,6 +104,8 @@ export interface LatexMetrics {
   malformed: number;
   /** 每 100 字符的畸形密度 */
   malformedDensity: number;
+  /** 感叹号（`!` 含 `\!` 中的 `!`）总数，用于第四道防线 */
+  bangs: number;
 }
 
 export interface LatexGuardResult {
@@ -113,12 +125,14 @@ function scoreGarbage(latex: string): LatexMetrics {
   const malformed =
     (latex.match(ESC_SPACE_RE) ?? []).length +
     (latex.match(EMPTY_GROUP_RE) ?? []).length;
+  const bangs = (latex.match(/!/g) ?? []).length;
   return {
     len: latex.length,
     strong,
     mathrm,
     malformed,
     malformedDensity: malformed / Math.max(1, latex.length / 100),
+    bangs,
   };
 }
 
@@ -178,6 +192,10 @@ export function validateLatex(
   // \mathrm 纯兜底高位闸（不参与评分，仅挡无 strong token 的洪水）
   if (m.mathrm > MAX_MATHRM) {
     return { ok: false, latex, reason: 'mathrm_flood', metrics: m };
+  }
+  // 第四道防线：感叹号洪流（前三条判据对 `\!`/`!` 成百上千次重复无效）
+  if (m.bangs > MAX_BANGS) {
+    return { ok: false, latex, reason: 'exclamation_flood', metrics: m };
   }
   if (isDuplicateOfText(latex, ocrText)) {
     return { ok: false, latex, reason: 'duplicate_of_text', metrics: m };

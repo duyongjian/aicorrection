@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Alert, Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { useLoop } from '../hooks/useLoop';
@@ -14,13 +14,25 @@ type Status = 'idle' | 'loading' | 'ok' | 'analyzing' | 'incomplete' | 'error';
 /** R02 + R03 归因展示 + 认可 / 追问 */
 export default function AttributionPage() {
   const navigate = useNavigate();
-  const { loop, attribution, runAttribution, rate, followup, resetLoop } =
+  const { loop, attribution, runAttribution, rate, followup, resetLoop, error } =
     useLoop();
 
   const [status, setStatus] = useState<Status>('idle');
   const [showFollowup, setShowFollowup] = useState(false);
   const [rated, setRated] = useState(false);
   const [imageError, setImageError] = useState(false);
+
+  /** 重新归因：保留已上传的 loop，仅重跑分析模型（不丢失原图/题干）。 */
+  const handleRetry = useCallback(() => {
+    setStatus('loading');
+    runAttribution()
+      .then((d) => {
+        if (d.status === 'ok') setStatus('ok');
+        else if (d.status === 'analyzing') setStatus('analyzing');
+        else setStatus('incomplete');
+      })
+      .catch(() => setStatus('error'));
+  }, [runAttribution]);
 
   useEffect(() => {
     if (!loop) {
@@ -108,16 +120,69 @@ export default function AttributionPage() {
         )}
       </Paper>
 
-      {(status === 'loading' || status === 'analyzing') && <AnalyzingState />}
+      {status === 'loading' && <AnalyzingState />}
+
+      {status === 'analyzing' && (
+        <Alert severity="warning" sx={{ mb: 2 }}>
+          归因模型响应较慢，本次未在限定时间内完成（已转为后台分析态）。可重新归因，
+          或改用更小的分析模型 / 调大 ATTRIBUTION_TIMEOUT_MS。
+          <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+            <Button size="small" variant="outlined" onClick={handleRetry}>
+              重新归因
+            </Button>
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => {
+                resetLoop();
+                navigate('/');
+              }}
+            >
+              返回上传
+            </Button>
+          </Box>
+        </Alert>
+      )}
 
       {status === 'incomplete' && (
         <Alert severity="warning" sx={{ mb: 2 }}>
           归因结果不完整（缺项），暂不展示。请重拍或补充文本后重试。
+          <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+            <Button size="small" variant="outlined" onClick={handleRetry}>
+              重新归因
+            </Button>
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => {
+                resetLoop();
+                navigate('/');
+              }}
+            >
+              返回上传
+            </Button>
+          </Box>
         </Alert>
       )}
+
       {status === 'error' && (
         <Alert severity="error" sx={{ mb: 2 }}>
-          归因请求失败，请返回重试。
+          归因请求失败：{error || '请返回重试'}
+          <Box sx={{ mt: 1, display: 'flex', gap: 1 }}>
+            <Button size="small" variant="outlined" onClick={handleRetry}>
+              重新归因
+            </Button>
+            <Button
+              size="small"
+              variant="text"
+              onClick={() => {
+                resetLoop();
+                navigate('/');
+              }}
+            >
+              返回上传
+            </Button>
+          </Box>
         </Alert>
       )}
 
