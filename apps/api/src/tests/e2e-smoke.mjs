@@ -45,12 +45,16 @@ async function call(method, path, body) {
 async function main() {
   log('BASE =', BASE);
 
-  // 0) 探活
-  const health = await call('GET', '/../health', undefined).catch(() => null);
-  if (!health) {
-    log('⚠ API 未启动，请先运行 `npm run dev:api` 或 `npm run start:api`');
+  // 0) 探活（/health 挂在根路径，不在 base 前缀下，需单独拼根地址）
+  const ROOT = BASE.replace(/\/api\/v\d+\/?$/, '');
+  const health = await fetch(ROOT + '/health')
+    .then((r) => r.json())
+    .catch(() => null);
+  if (!health?.ok) {
+    log(`⚠ API 未启动（探活 ${ROOT}/health 失败），请先运行 \`npm run start:api\``);
     process.exit(2);
   }
+  log('探活 OK →', ROOT + '/health', JSON.stringify(health));
 
   const sessionId = 's_smoke_' + Date.now().toString(36);
   const now = () => new Date().toISOString();
@@ -230,31 +234,73 @@ async function main() {
   });
   assert(trackOcr.status === 200 && trackOcr.data?.data?.accepted === 1, 'OCR fail 分支：loop_upload 落库');
 
-  // T5-2) 归因超时分支
-  // 直接导入服务层测试（绕过 HTTP，避免需要重启带不同 env 的服务器）
+  // T5-2) 归因超时分支（真测试：注入慢调用 + 极短超时 → 期望 analyzing 降级）
+  // 绕过 HTTP，直接调服务层，验证"超时且无 mock 兜底 → 诚实降级 analyzing"路径。
   try {
-    const { generateAttribution } = await import('../src/services/attribution/attributionService.js');
-    // 设置极短超时 + 禁用 fallback
-    const origTimeout = (await import('../src/config/env.js')).env.ATTRIBUTION_TIMEOUT_MS;
-    // 通过覆盖 env 来模拟超时
-    const { TIMEOUT } = await import('../src/config/timeout.js');
-    const origAttrTimeout = TIMEOUT.ATTRIBUTION_MS;
-    // 直接测试：传入一个会超时的输入（mock provider 足够快不会真超时，
-    // 所以实际验证逻辑走 service 层的 timeout 路径比较困难，改为验证
-    // 当 AUTO_FALLBACK_TO_MOCK=false 且真实 LLM 不可用时，返回 analyzing）
-    // 这里用一个简化的方式：直接检查生成逻辑是否存在 analyzing 路径
-    const testInput = {
-      loop_id: 'l_test_timeout_' + Date.now(),
+    const { generateAttribution } = await import('../services/attribution/attributionService.js');
+    const { getAnalysisProvider } = await import('../services/llm/index.js');
+    const { env } = await import('../config/env.js');
+    const { TIMEOUT } = await import('../config/timeout.js');
+
+    // 关闭 mock 兜底，确保超时后走"诚实降级 analyzing"而非被 mock 顶替
+    const origFallback = env.AUTO_FALLBACK_TO_MOCK;
+    env.AUTO_FALLBACK_TO_MOCK = false;
+    // 极短超时，确保任何调用都超时
+    const origTimeout = TIMEOUT.ATTRIBUTION_MS;
+    TIMEOUT.ATTRIBUTION_MS = 1;
+
+    // 取单例 provider 并注入一个"故意慢"的 chat（>1ms 超时）
+    const provider = getAnalysisProvider();
+    const origChat = provider.chat.bind(provider);
+    provider.chat = async (...args) => {
+      await new Promise((r) => setTimeout(r, 50));
+      return origChat(...args);
+    };
+
+    const tInput = {
+      // 复用真实 loop_id，避免外键约束失败（若降级路径仍落库）
+      loop_id: loopId,
       anon_user_id: anonUserId,
-      question: '测试超时分支',
+      question: '测试超时分支：这道题的本质是什么？',
       is_internal: false,
     };
-    // mock provider 总是成功，所以用非 mock provider 且设超时会走 analyzing
-    // 由于本环境默认 mock，验证路径存在即可
-    assert(true, '归因超时分支：analyzing 路径已预埋（mock provider 始终成功，真实场景由 TIMEOUT 控制）');
+    const tRes = await generateAttribution(tInput);
+    assert(
+      tRes && tRes.status === 'analyzing',
+      `归因超时分支：返回 analyzing 降级态（实际=${tRes?.status}）`
+    );
+
+    // 还原，避免污染后续逻辑
+    TIMEOUT.ATTRIBUTION_MS = origTimeout;
+    env.AUTO_FALLBACK_TO_MOCK = origFallback;
+    provider.chat = origChat;
   } catch (e) {
-    log('  · 超时分支服务层导入失败（忽略，路径已存在于代码中）:', e.message.split('\n')[0]);
-    assert(true, '归因超时分支：代码路径存在（见 attributionService.ts fallbackToMock 逻辑）');
+    assert(false, `归因超时分支：异常 ${e?.message?.split('\n')[0] ?? e}`);
+  }
+
+  // T5-3) screen_view 枚举冻结校验（K1.2b 不可回溯硬门槛）
+  // 规则：v0.1 只允许 upload/attr_show/followup；其余页名必须被拒（pending 或 unknown）。
+  try {
+    const { validateScreenView } = await import('@aicorrection/shared');
+    const active = ['upload', 'attr_show', 'followup'];
+    const pending = ['practice', 'restate', 'verify', 'review', 'dashboard', 'other'];
+
+    const activeOk = active.every((p) => validateScreenView(p).ok);
+    assert(activeOk, `screen_view 冻结：ACTIVE 三页可上报 (${active.join('/')})`);
+
+    const pendingRejected = pending.every((p) => {
+      const r = validateScreenView(p);
+      return !r.ok && r.reason === 'pending';
+    });
+    assert(pendingRejected, `screen_view 冻结：PENDING 六页被拒 reason=pending`);
+
+    const unknownRejected = (() => {
+      const r = validateScreenView('nonexistent_page');
+      return !r.ok && r.reason === 'unknown';
+    })();
+    assert(unknownRejected, 'screen_view 冻结：未知页名被拒 reason=unknown');
+  } catch (e) {
+    assert(false, `screen_view 冻结校验：异常 ${e?.message?.split('\n')[0] ?? e}`);
   }
 
   log(`\n结果：通过 ${pass} 项，失败 ${failCount} 项`);

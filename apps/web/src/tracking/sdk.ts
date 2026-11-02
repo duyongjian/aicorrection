@@ -4,6 +4,7 @@
  * 注：本地持久化兜底可用 IndexedDB 扩展；此处实现内存队列 + 失败重试，
  * 断网时事件暂存于内存队列，恢复后随下一次 flush 自动续传。
  */
+import { validateScreenView } from '@aicorrection/shared';
 import type { Segment, TrackEvent } from '@aicorrection/shared';
 import { trackingContext } from './context';
 import {
@@ -18,7 +19,6 @@ import type {
   LoopAttrShowProps,
   AttrRateProps,
   FollowupProps,
-  ScreenViewPage,
 } from '@aicorrection/shared';
 import { api } from '../api/client';
 
@@ -77,12 +77,30 @@ export const tracker = {
   },
 
   /**
-   * screen_view 事件上报
+   * screen_view 事件上报（K1.2b 冻结校验）
+   *
+   * 仅 v0.1 ACTIVE 页（upload / attr_show / followup）允许上报；
+   * PENDING 页（practice/restate/verify/review/dashboard/other）或未知页名
+   * 一律丢弃并告警，避免污染 v0.1 分析口径。
+   *
    * @param screenName 页面名称
    * @param enterTs 进入时间（ISO8601），不传则用当前时间
    */
-  screenView(screenName: ScreenViewPage, enterTs?: string): void {
-    queue.push(screenView(screenName, enterTs));
+  screenView(screenName: string, enterTs?: string): void {
+    const v = validateScreenView(screenName);
+    if (!v.ok) {
+      if (v.reason === 'pending') {
+        console.warn(
+          `[tracking] screen_view "${String(screenName)}" 在 v0.1 为 PENDING，已丢弃（不上报）`
+        );
+      } else {
+        console.warn(
+          `[tracking] screen_view 未知页名 "${String(screenName)}"，已丢弃（请先在 SCREEN_VIEW_STATUS 登记）`
+        );
+      }
+      return;
+    }
+    queue.push(screenView(v.page, enterTs));
     scheduleFlush();
   },
 

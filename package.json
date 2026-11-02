@@ -17,7 +17,7 @@
     "start:api": "npm run build:shared && npm run start -w @aicorrection/api",
     "start:test": "node scripts/start-test.mjs",
     "start:test:sh": "bash scripts/start-test.sh",
-    "smoke": "npm run build:shared && node apps/api/src/tests/e2e-smoke.mjs"
+    "smoke": "npm run build:shared && tsx apps/api/src/tests/e2e-smoke.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
