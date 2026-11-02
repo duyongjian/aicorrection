@@ -139,12 +139,14 @@ export function createApp() {
   app.use(`${base}/upload`, uploadRoutes);
 
   // 上传原图只读静态服务（供前端回显）。仅暴露 uploads 目录，禁止目录列表与点文件。
+  // 注：不要设 fallthrough:false —— express.static 在文件缺失时抛 404 Error，
+  // 而本项目的 errorHandler 只识别 HttpError，其余一律转 500，会把"图片不存在"
+  // 误报为服务内部错误。保持默认 fallthrough，让未命中落到 notFoundHandler 返回 404。
   app.use(
     `${base}/uploads`,
     express.static(env.UPLOAD_DIR, {
       index: false,
       dotfiles: 'deny',
-      fallthrough: false,
       maxAge: '1h',
     })
   );

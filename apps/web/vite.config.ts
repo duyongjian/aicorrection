@@ -23,7 +23,9 @@ export default defineConfig({
     port: 5173,
     proxy: {
       '/api': {
-        target: 'http://localhost:3001',
+        // 必须用 127.0.0.1 而非 localhost：Windows 上 localhost 优先解析为 ::1，
+        // 而 API 侧 app.listen(PORT,'0.0.0.0') 只绑 IPv4，走 ::1 会 ECONNREFUSED。
+        target: 'http://127.0.0.1:3001',
         changeOrigin: true,
       },
     },
