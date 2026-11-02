@@ -16,13 +16,15 @@ export function createAttribution(attribution: Attribution): void {
     .prepare(
       `INSERT INTO attributions (
         attribution_id, loop_id, anon_user_id, mistake_id,
-        cause, knowledge_point, essence, attr_model_version, attr_latency_ms,
+        cause, knowledge_point, essence, correct_answer, derivation, pitfalls,
+        attr_model_version, attr_latency_ms,
         rate_action, inaccurate_reason, expert_consistency, expert_accuracy,
         knowledge_point_id, cause_id, kq_taxonomy_version, cause_taxonomy_version,
         is_mock, is_internal
       ) VALUES (
         @attribution_id, @loop_id, @anon_user_id, @mistake_id,
-        @cause, @knowledge_point, @essence, @attr_model_version, @attr_latency_ms,
+        @cause, @knowledge_point, @essence, @correct_answer, @derivation, @pitfalls,
+        @attr_model_version, @attr_latency_ms,
         @rate_action, @inaccurate_reason, @expert_consistency, @expert_accuracy,
         @knowledge_point_id, @cause_id, @kq_taxonomy_version, @cause_taxonomy_version,
         @is_mock, @is_internal
@@ -58,7 +60,8 @@ export function listAttributionsByUser(
   const rows = getDb()
     .prepare(
       `SELECT a.attribution_id, a.loop_id, a.anon_user_id, a.cause, a.knowledge_point,
-              a.essence, a.attr_model_version, a.attr_latency_ms, a.rate_action, a.created_at,
+              a.essence, a.correct_answer, a.derivation, a.pitfalls,
+              a.attr_model_version, a.attr_latency_ms, a.rate_action, a.created_at,
               m.subject, m.src_type, m.mistake_ref
        FROM attributions a
        LEFT JOIN mistakes m ON a.mistake_id = m.mistake_id
@@ -74,6 +77,9 @@ export function listAttributionsByUser(
     cause: r.cause,
     knowledge_point: r.knowledge_point,
     essence: r.essence,
+    correct_answer: r.correct_answer,
+    derivation: r.derivation,
+    pitfalls: r.pitfalls,
     attr_model_version: r.attr_model_version,
     attr_latency_ms: r.attr_latency_ms,
     rate_action: r.rate_action,

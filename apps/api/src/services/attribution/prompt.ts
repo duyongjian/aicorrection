@@ -22,6 +22,30 @@ export const ATTR_SYSTEM = `你是一名资深学科诊断教练，擅长"触及
 - 防臆造（刚性）：只可基于"本题题干 + 本题用户作答"独立推导，严禁凭空臆造题干未给出的条件、步骤或结论。
 - 关于【题库参考】/【网络检索参考】：仅为相似题参考要点，须基于本题干独立推导，不得照抄其结论；若无关则完全忽略。`;
 
+/**
+ * 无作答讲解模式（ATT-01b）：仅提供题干、未提供用户作答时，无法定位"具体错因"，
+ * 转而输出"本题讲解"——正确答案 + 正确推导 + 常见陷阱（+ 知识点/本质 与诊断模式对齐）。
+ * 同样硬性约束只输出带标记段落，禁止前言/推导噪音，以防 27B 模型长篇跑飞被截断。
+ */
+export const ATTR_SYSTEM_NOANSWER = `你是一名资深学科讲师，擅长"讲清一道题"。当前用户只提供了题干、未提供自己的作答，因此你无法定位其个人错因，而应给出本题的规范讲解。
+
+【硬性输出约束（最高优先级）】
+你的回答必须且只能包含以下带标记段落，每段独立成行，禁止输出任何前言、解释、思考、代码块或多余文字：
+正确答案：<本题正确结论；选择题直接写选项字母与等式，填空/解答题写最终表达式>
+正确推导：<3-5 步最简推导，每步一行，不得展开长篇；只做抵达结论所需的最少步骤>
+常见陷阱：<本题最容易错的点 1-2 条，具体到本类题型（如符号、漏项、混淆公式），不得空泛>
+知识点：<本题涉及的核心知识点（一句话）>
+本质：<一句话触及该知识点本质>
+
+直接输出这五段即可，不要"好的，以下是…"之类开场白，也不要在段后追加说明。若题干不足以判定唯一答案，请在"正确答案"中如实说明并给出在给定条件下的结论。
+
+【要求】
+- 五段缺一不可（正确答案/正确推导/常见陷阱/知识点/本质 必须都给出且非空）。
+- 正确推导须独立、自洽，仅基于题干，不引入题干未给的条件。
+- 常见陷阱须具体到本题型（例如"对 e^{y+az} 关于 y 求偏导时漏掉内层 z 的链式法则，导致 z_y 符号错误"），严禁空话。
+- 防臆造（刚性）：只可基于"本题题干"独立推导，严禁凭空臆造条件、步骤或结论。
+- 关于【题库参考】/【网络检索参考】：仅为相似题参考要点，须基于本题干独立推导，不得照抄其结论；若无关则完全忽略。`;
+
 export const FOLLOWUP_SYSTEM = `[FOLLOWUP_MODE] 你是苏格拉底式追问教练。针对用户对已归因结果的追问，给出一步更深层的补充归因解读（1-3 句），引导用户从"为什么"出发再拆解，而非直接给答案。`;
 
 export function attrUserPrompt(
@@ -106,8 +130,18 @@ export interface ParsedTriple {
   hasThree: boolean;
 }
 
+/** 无作答讲解模式解析结果：正确答案 / 正确推导 / 常见陷阱 为核心字段。 */
+export interface ParsedTeaching {
+  correct_answer?: string;
+  derivation?: string;
+  pitfalls?: string;
+  knowledge_point?: string;
+  essence?: string;
+  hasCore: boolean;
+}
+
 /** 已知字段标记（含别名），用于在同一行/多行输出中切分三段。 */
-const FIELD_MARKERS = ['错因', '错误原因', '知识点', '本质'];
+const FIELD_MARKERS = ['错因', '错误原因', '知识点', '本质', '正确答案', '正确推导', '常见陷阱'];
 
 /**
  * 解析 LLM / Mock 输出为三项结构；三项齐全返回 hasThree=true。
@@ -135,6 +169,22 @@ export function parseAttrTriple(text: string): ParsedTriple {
     essence: essence?.value,
     hasThree,
   };
+}
+
+/**
+ * 解析无作答讲解模式的输出：提取 正确答案 / 正确推导 / 常见陷阱（核心三段）
+ * 以及可选的 知识点 / 本质。以"最后一个标记"为锚（兼容推理模型在 reasoning 后输出结论）。
+ * 核心三段齐全返回 hasCore=true。
+ */
+export function parseTeaching(text: string): ParsedTeaching {
+  const src = text.replace(/\r/g, '').trim();
+  const correct_answer = findLastField(src, ['正确答案'], null)?.value;
+  const derivation = findLastField(src, ['正确推导'], null)?.value;
+  const pitfalls = findLastField(src, ['常见陷阱'], null)?.value;
+  const knowledge_point = findLastField(src, ['知识点'], null)?.value;
+  const essence = findLastField(src, ['本质'], null)?.value;
+  const hasCore = Boolean(correct_answer && derivation && pitfalls);
+  return { correct_answer, derivation, pitfalls, knowledge_point, essence, hasCore };
 }
 
 interface FoundField { value: string; index: number; }

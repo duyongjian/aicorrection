@@ -60,6 +60,9 @@ function HistoryDetail({ item }: { item: HistoryItem }) {
         />
       )}
       <Stack spacing={1}>
+        {item.correct_answer && <Field label="正确答案" value={item.correct_answer} />}
+        {item.derivation && <Field label="正确推导" value={item.derivation} />}
+        {item.pitfalls && <Field label="常见陷阱" value={item.pitfalls} />}
         <Field label="知识点" value={item.knowledge_point} />
         <Field label="错因" value={item.cause} />
         <Field label="本质" value={item.essence} />

@@ -45,6 +45,12 @@ export interface Attribution {
   cause: string | null;
   knowledge_point: string | null;
   essence: string | null;
+  /** ATT-01b: 无作答讲解模式——正确答案 */
+  correct_answer: string | null;
+  /** ATT-01b: 无作答讲解模式——正确推导 */
+  derivation: string | null;
+  /** ATT-01b: 无作答讲解模式——本题常见陷阱 */
+  pitfalls: string | null;
   attr_model_version: string | null;
   attr_latency_ms: number | null;
   rate_action: RateAction | null;
@@ -77,6 +83,10 @@ export interface HistoryItem {
   cause: string | null;
   knowledge_point: string | null;
   essence: string | null;
+  /** ATT-01b: 无作答讲解模式教学字段（仅该模式填充，缺省 null） */
+  correct_answer: string | null;
+  derivation: string | null;
+  pitfalls: string | null;
   attr_model_version: string | null;
   attr_latency_ms: number | null;
   /** 用户认可动作：approve / inaccurate / report / null（未评价） */
@@ -209,6 +219,10 @@ export interface AttributionOkData {
   attr_model_version: string;
   attr_latency_ms: number;
   complete: true;
+  /** ATT-01b: 无作答讲解模式教学字段（仅该模式填充，诊断模式为 undefined） */
+  correct_answer?: string;
+  derivation?: string;
+  pitfalls?: string;
   /** P1: 题库 RAG 参考块。命中相似题时带回（source='qbank'），供前端展示"诊断依据"；
    *  未命中 / 关闭 / 检索失败时为 undefined。绝不虚构内容。 */
   references?: AttributionReference;

@@ -39,10 +39,13 @@ function logAnalysisFailure(entry: {
 }
 import {
   ATTR_SYSTEM,
+  ATTR_SYSTEM_NOANSWER,
   attrUserPrompt,
   buildReferenceBlock,
   buildWebSearchBlock,
   parseAttrTriple,
+  parseTeaching,
+  type ParsedTeaching,
 } from './prompt';
 import { getKnowledgeReferences } from './references';
 import { retrieveReferences } from '../rag/ragService';
@@ -63,6 +66,10 @@ export async function generateAttribution(
 ): Promise<AttributionData> {
   // 归因分析走独立的分析 provider（ANALYSIS_*，可指向另一个本地强模型）
   const provider = getAnalysisProvider();
+
+  // 是否有用户作答：有作答 → 诊断模式（错因/知识点/本质 三行）；
+  // 无作答 → 讲解模式（正确答案/正确推导/常见陷阱 + 知识点/本质）。
+  const hasAnswer = Boolean(input.user_answer && input.user_answer.trim());
 
   // 题库 RAG 参考块（P1）：带独立超时 RAG_TIMEOUT_MS（默认 8s）。超时/失败→不注入参考块，归因照常进行。
   // 注：web 搜索在 RAG 之后发起（用 RAG 命中的知识点作检索词），故此处只起 RAG。
@@ -108,7 +115,7 @@ export async function generateAttribution(
   );
 
   const messages: LlmMessage[] = [
-    { role: 'system', content: ATTR_SYSTEM + refsBlock },
+    { role: 'system', content: (hasAnswer ? ATTR_SYSTEM : ATTR_SYSTEM_NOANSWER) + refsBlock },
     { role: 'user', content: userContent },
   ];
 
@@ -140,14 +147,15 @@ export async function generateAttribution(
   // 超时预算无意义。重试耗尽仍失败 → 诚实降级（analyzing）+ 本地告警（供运维/自动重启 8085）。
   let analysisRes: LlmResult | null = null;
   let lastErr: unknown = null;
+  // 讲解模式（无作答）需容纳"正确推导"多步内容，放宽到 1792；诊断模式维持 1536。
+  const maxTokens = hasAnswer ? 1536 : 1792;
   for (let attempt = 0; attempt <= env.ANALYSIS_MAX_RETRIES; attempt++) {
     try {
       analysisRes = await withTimeout(
-        // max_tokens 1536：按分析强模型 ~3 tok/s 估算，4096 token 需 ~1400s，
-        // 远超 300s 超时预算（等于必然超时）；实测正常归因仅 448 token，
-        // 1536 留约 3x 余量。真触发截断时由 parseAttrTriple 判定缺项 → 返回
-        // incomplete（诚实失败，绝不补假数据）。
-        provider.chat(messages, { maxTokens: 1536 }),
+        // max_tokens：按分析强模型 ~3 tok/s 估算，4096 token 需 ~1400s，
+        // 远超超时预算（等于必然超时）；实测正常归因仅 ~93-448 token，
+        // 留约 3x 余量。真触发截断时由解析判定缺项 → 返回 incomplete（诚实失败，绝不补假数据）。
+        provider.chat(messages, { maxTokens }),
         TIMEOUT.ATTRIBUTION_MS
       );
       break;
@@ -181,14 +189,63 @@ export async function generateAttribution(
     }
   }
 
-  let parsed = parseAttrTriple(text ?? '');
-  if (!parsed.hasThree && !usedFallback) {
-    // 真实模型输出缺项 → 再尝试 Mock 兜底；仍失败则标记待审，不展示残缺结果
-    await fallbackToMock();
-    parsed = parseAttrTriple(text ?? '');
+  // 按模式解析：有作答走诊断三行；无作答走讲解五段。
+  if (hasAnswer) {
+    let parsed = parseAttrTriple(text ?? '');
+    if (!parsed.hasThree && !usedFallback) {
+      // 真实模型输出缺项 → 再尝试 Mock 兜底；仍失败则不展示残缺结果
+      await fallbackToMock();
+      parsed = parseAttrTriple(text ?? '');
+    }
+    if (!parsed.hasThree) return { status: 'incomplete' };
+
+    const attributionId = generateAttributionId();
+    createAttribution({
+      attribution_id: attributionId,
+      loop_id: input.loop_id,
+      anon_user_id: input.anon_user_id,
+      mistake_id: input.mistake_id ?? null,
+      cause: parsed.cause ?? null,
+      knowledge_point: parsed.knowledge_point ?? null,
+      essence: parsed.essence ?? null,
+      correct_answer: null,
+      derivation: null,
+      pitfalls: null,
+      attr_model_version: modelVersion,
+      attr_latency_ms: latencyMs,
+      rate_action: null,
+      inaccurate_reason: null,
+      expert_consistency: null,
+      expert_accuracy: null,
+      knowledge_point_id: null,
+      cause_id: null,
+      kq_taxonomy_version: 'v0.1',
+      cause_taxonomy_version: 'v0.1',
+      is_mock: isMock ? 1 : 0,
+      is_internal: input.is_internal ? 1 : 0,
+      created_at: new Date().toISOString(),
+    });
+    return {
+      status: 'ok',
+      attribution_id: attributionId,
+      loop_id: input.loop_id,
+      cause: parsed.cause as string,
+      knowledge_point: parsed.knowledge_point as string,
+      essence: parsed.essence as string,
+      attr_model_version: modelVersion,
+      attr_latency_ms: latencyMs,
+      complete: true,
+      // P1：带回题库参考块（若本次命中/已检索）。超时或未命中时 refResult 为 null → 不附。
+      references: refResult ?? undefined,
+      // P2：带回联网搜索参考块（若开启且命中）。关闭/失败/未命中时 webResult 为 null → 不附。
+      webSearch: webResult ?? undefined,
+    };
   }
 
-  if (!parsed.hasThree) {
+  // 无作答：讲解模式（ATT-01b）
+  const teaching = parseTeaching(text ?? '');
+  if (!teaching.hasCore) {
+    // 真实模型缺项 → 诚实降级（Mock 兜底产出的是三行格式，无法补足教学字段）。
     return { status: 'incomplete' };
   }
 
@@ -198,9 +255,13 @@ export async function generateAttribution(
     loop_id: input.loop_id,
     anon_user_id: input.anon_user_id,
     mistake_id: input.mistake_id ?? null,
-    cause: parsed.cause ?? null,
-    knowledge_point: parsed.knowledge_point ?? null,
-    essence: parsed.essence ?? null,
+    // 无作答无法定位个人错因，错因行给状态说明；知识点/本质复用讲解内容。
+    cause: '（未提供作答，已给出本题讲解）',
+    knowledge_point: teaching.knowledge_point ?? null,
+    essence: teaching.essence ?? null,
+    correct_answer: teaching.correct_answer ?? null,
+    derivation: teaching.derivation ?? null,
+    pitfalls: teaching.pitfalls ?? null,
     attr_model_version: modelVersion,
     attr_latency_ms: latencyMs,
     rate_action: null,
@@ -215,20 +276,20 @@ export async function generateAttribution(
     is_internal: input.is_internal ? 1 : 0,
     created_at: new Date().toISOString(),
   });
-
   return {
     status: 'ok',
     attribution_id: attributionId,
     loop_id: input.loop_id,
-    cause: parsed.cause as string,
-    knowledge_point: parsed.knowledge_point as string,
-    essence: parsed.essence as string,
+    cause: '（未提供作答，已给出本题讲解）',
+    knowledge_point: teaching.knowledge_point ?? '',
+    essence: teaching.essence ?? '',
     attr_model_version: modelVersion,
     attr_latency_ms: latencyMs,
     complete: true,
-    // P1：带回题库参考块（若本次命中/已检索）。超时或未命中时 refResult 为 null → 不附。
     references: refResult ?? undefined,
-    // P2：带回联网搜索参考块（若开启且命中）。关闭/失败/未命中时 webResult 为 null → 不附。
     webSearch: webResult ?? undefined,
+    correct_answer: teaching.correct_answer ?? undefined,
+    derivation: teaching.derivation ?? undefined,
+    pitfalls: teaching.pitfalls ?? undefined,
   };
 }
