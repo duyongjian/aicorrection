@@ -74,11 +74,13 @@ export const env = {
 
   // 调用超时（可配置）。默认按分析强模型 Qwen3.8-27B @ RTX4060 8GB 显存标定：
   // 显存不足导致层溢出 CPU，~3 tok/s；thinking 关闭后实测单次归因 161s。
-  // 用户实测 27B 在受限显存上极易 >300s → 前端 axios 先 abort、误报"归因请求失败"。
-  // 故放宽到 600s（10min）留足余量；前端 REQUEST_TIMEOUT_MS 须严格大于此值。
-  ATTRIBUTION_TIMEOUT_MS: toNum(process.env.ATTRIBUTION_TIMEOUT_MS, 600_000),
-  // 追问走同一强模型，短回答但同样可能受慢速拖累；放宽到 300s 作安全网。
-  FOLLOWUP_TIMEOUT_MS: toNum(process.env.FOLLOWUP_TIMEOUT_MS, 300_000),
+  // 但双通道 OCR（本地 OCR + MiniCPM-V 描述）拼接后题干更长 → prefill/生成更慢，
+  // 用户实测在受限显存上极易 >300s → 前端 axios 先 abort、误报"归因请求失败"。
+  // 故大幅放宽到 900s（15min）留足余量；前端 REQUEST_TIMEOUT_MS 须严格大于此值。
+  // 注意：apps/api/.env 若显式写了 ATTRIBUTION_TIMEOUT_MS，会覆盖此默认值。
+  ATTRIBUTION_TIMEOUT_MS: toNum(process.env.ATTRIBUTION_TIMEOUT_MS, 900_000),
+  // 追问走同一强模型，短回答但同样可能受慢速拖累；放宽到 600s（10min）作安全网。
+  FOLLOWUP_TIMEOUT_MS: toNum(process.env.FOLLOWUP_TIMEOUT_MS, 600_000),
   /**
    * 分析强模型（27B）重试次数（"先重试再降级"策略，见 attributionService）。
    * 仅对"传输/连接"类快失败重试（模型崩了/没起来/瞬间 5xx）；对完整生成超时（模型在跑但慢）
