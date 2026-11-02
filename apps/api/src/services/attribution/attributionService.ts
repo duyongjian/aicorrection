@@ -111,7 +111,8 @@ export async function generateAttribution(
   const userContent = attrUserPrompt(
     input.question,
     input.user_answer,
-    referenceBlock ? `${referenceBlock}\n${webBlock}` : webBlock
+    referenceBlock ? `${referenceBlock}\n${webBlock}` : webBlock,
+    { teach: !hasAnswer }
   );
 
   const messages: LlmMessage[] = [

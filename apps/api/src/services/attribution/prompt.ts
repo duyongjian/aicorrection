@@ -16,6 +16,7 @@ export const ATTR_SYSTEM = `你是一名资深学科诊断教练，擅长"触及
 
 【诊断要求】
 - 三者缺一不可（错因/知识点/本质 必须都给出且非空）。
+- 【数学表达】所有数学公式一律用 LaTeX 书写：行内公式用单个 $ 包裹（如 $\frac{\partial z}{\partial x}$），独立公式或关键等式用 $$ 包裹并独占一行（如 $$\frac{\partial z}{\partial x} - \frac{\partial z}{\partial y} = \frac{1}{a}$$）。禁止使用纯文本 unicode 数学符号（如 ∂、∫、∑、−、≥、¹⁄ₐ 等）代替 LaTeX。
 - 错因须是从题干与作答中严谨推导出的具体错误（如链式法则漏系数/未套公式、符号错误、约分未约、端点未比较、概念混淆等）。
 - 若题干本身正确无误或无法定位具体错因，请如实说明（例如 错因：解法正确，未出现错误 / 错因：未提供作答，无法定位具体错因），切勿臆造或强行归因。
 - "本质"的因果关系必须与数学推导一致；不得引入题干未给出、且对出错并不必要的臆想步骤（例如凭空说"未用原方程替换某项"，而该项在运算中会自然消去）。
@@ -39,6 +40,9 @@ export const ATTR_SYSTEM_NOANSWER = `你是一名资深学科讲师，擅长"讲
 
 直接输出这五段即可，不要"好的，以下是…"之类开场白，也不要在段后追加说明。若题干不足以判定唯一答案，请在"正确答案"中如实说明并给出在给定条件下的结论。
 
+【数学表达】
+所有数学公式一律用 LaTeX 书写：行内公式用单个 $ 包裹（如 $F(x,y,z)=0$）；"正确推导"的每一步用 $$ 包裹并独占一行（如 $$z_x = -\frac{F_x}{F_z} = \frac{1}{a(1+e^{y+az})}$$）。禁止使用纯文本 unicode 数学符号（如 ∂、∫、∑、−、≥、¹⁄ₐ 等）代替 LaTeX，确保前端能渲染为可读公式。
+
 【要求】
 - 五段缺一不可（正确答案/正确推导/常见陷阱/知识点/本质 必须都给出且非空）。
 - 正确推导须独立、自洽，仅基于题干，不引入题干未给的条件。
@@ -51,7 +55,8 @@ export const FOLLOWUP_SYSTEM = `[FOLLOWUP_MODE] 你是苏格拉底式追问教�
 export function attrUserPrompt(
   question: string,
   userAnswer?: string,
-  referenceBlock?: string
+  referenceBlock?: string,
+  opts?: { teach?: boolean }
 ): string {
   const ansPart = userAnswer && userAnswer.trim()
     ? `\n用户作答：${userAnswer.trim()}`
@@ -61,7 +66,10 @@ export function attrUserPrompt(
   const refPart = referenceBlock && referenceBlock.trim()
     ? `\n\n${referenceBlock}`
     : '';
-  return `题干：\n${question.trim()}${ansPart}${refPart}\n请聚焦识别真实存在的具体错因，克制推导篇幅，最终务必输出三行结论。\n请按格式输出诊断：`;
+  const tail = opts?.teach
+    ? '请按讲解模式输出 正确答案 / 正确推导 / 常见陷阱 / 知识点 / 本质 五段，正确推导每步用 $$ 包裹并独占一行。\n直接输出，不要前言与总结：'
+    : '请聚焦识别真实存在的具体错因，克制推导篇幅，最终务必输出三行结论（错因/知识点/本质）。\n请按格式输出诊断：';
+  return `题干：\n${question.trim()}${ansPart}${refPart}\n${tail}`;
 }
 
 /**

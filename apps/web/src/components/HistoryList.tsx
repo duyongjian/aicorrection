@@ -16,6 +16,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { api } from '../api/client';
 import { useLoopStore } from '../store/loopStore';
 import type { HistoryItem } from '@aicorrection/shared';
+import MathText from './MathText';
 
 const RATE_LABEL: Record<string, string> = {
   approve: '已认可',
@@ -85,9 +86,7 @@ function Field({ label, value }: { label: string; value: string | null }) {
       <Typography variant="caption" color="text.secondary">
         {label}
       </Typography>
-      <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
-        {value || '—'}
-      </Typography>
+      <MathText text={value || '—'} />
     </Box>
   );
 }

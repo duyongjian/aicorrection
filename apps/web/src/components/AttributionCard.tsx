@@ -4,9 +4,9 @@ import {
   CardHeader,
   Chip,
   Grid,
-  Typography,
 } from '@mui/material';
 import type { AttributionOkData } from '@aicorrection/shared';
+import MathText from './MathText';
 
 /** 三栏归因卡片：错因 / 知识点 / 本质一句话；无作答时额外展示"本题讲解"三栏 */
 export default function AttributionCard({
@@ -46,12 +46,7 @@ export default function AttributionCard({
               }
             />
             <CardContent>
-              <Typography
-                variant="body1"
-                sx={{ whiteSpace: 'pre-wrap' }}
-              >
-                {it.value}
-              </Typography>
+              <MathText text={it.value ?? ''} />
             </CardContent>
           </Card>
         </Grid>
