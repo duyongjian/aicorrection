@@ -10,7 +10,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const BASE = process.env.API_BASE || 'http://localhost:3001/api/v1';
+const BASE = process.env.API_BASE || 'http://127.0.0.1:3001/api/v1';
 
 let pass = 0;
 let failCount = 0;

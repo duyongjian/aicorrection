@@ -10,10 +10,12 @@ async function main(): Promise<void> {
   getDb(); // 建库 + 迁移
   const provider = await initProvider();
   const app = createApp();
-  app.listen(env.PORT, () => {
+  // 绑定到 0.0.0.0，同时支持 IPv4 和 IPv6
+  // 使用 '0.0.0.0' 避免 localhost 解析到 IPv6 ::1 时的连接问题
+  app.listen(env.PORT, '0.0.0.0', () => {
     // eslint-disable-next-line no-console
     console.log(
-      `[aicorrection-api] listening on http://localhost:${env.PORT} ` +
+      `[aicorrection-api] listening on http://0.0.0.0:${env.PORT} ` +
         `(NODE_ENV=${env.NODE_ENV}, provider=${provider.name})`
     );
   });
