@@ -7,7 +7,7 @@
 #   2. 【绝不 mock】——强制 AUTO_FALLBACK_TO_MOCK=false，且不覆盖 LLM_PROVIDER。
 #      依据 src/services/llm/index.ts:23：LLM_PROVIDER !== 'mock' 即走真实
 #      OllamaProvider（OpenAI 兼容），故沿用 .env 的 LLM_PROVIDER=llama 就是真调用。
-#   3. 启动前【预检】各真实服务端点，未就绪只告警提示、不降级、不 mock。
+#   3. 启动前【预检】各真实服务端点；未就绪只告警提示、不降级、不 mock。
 #
 #  用法：
 #    ./scripts/start-test.sh            # 预检 + 构建 shared + 启动 API/Web + 开浏览器
@@ -17,7 +17,10 @@ set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
 # 清除代理环境变量，避免干扰本地服务探测
-unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy no_proxy NO_PROXY 2>/dev/null || true
+# 使用 NO_PROXY 覆盖比 unset 更可靠，防止环境 shim 恢复变量
+export NO_PROXY="localhost,127.0.0.1,::1,.local"
+export no_proxy="localhost,127.0.0.1,::1,.local"
+unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy 2>/dev/null || true
 
 CHECK_ONLY=0
 [ "${1:-}" = "--check" ] && CHECK_ONLY=1
@@ -38,6 +41,19 @@ OCR_PY="$(read_env OCR_PYTHON)"
 [ -z "$OCR_PY" ] && OCR_PY="D:/AllSideProject/AICorrection/.venv-ocr/Scripts/python.exe"
 API_PORT="$(read_env PORT)";                 API_PORT="${API_PORT:-3001}"
 
+# ── WSL 兼容：WSL2 有独立网络命名空间，其 localhost ≠ Windows 主机 localhost。
+#    在 WSL 下必须改用 Windows 主机 IP（默认网关 / resolv.conf nameserver），
+#    否则预检 8085/8090 全部连接被拒（HTTP 000）。
+if grep -qi microsoft /proc/version 2>/dev/null; then
+  WIN_HOST="$(ip route show default 2>/dev/null | awk '{print $3; exit}')"
+  [ -z "$WIN_HOST" ] && WIN_HOST="$(awk '/^nameserver/{print $2; exit}' /etc/resolv.conf 2>/dev/null)"
+  if [ -n "$WIN_HOST" ]; then
+    ANALYSIS_URL="${ANALYSIS_URL/localhost/$WIN_HOST}"
+    RECOG_URL="${RECOG_URL/localhost/$WIN_HOST}"
+    echo "[WSL] 检测到 WSL 环境，已将 localhost 替换为 Windows 主机 IP：$WIN_HOST"
+  fi
+fi
+
 echo "============================================================"
 echo "  错题强化闭环 · 一键启动【真实大模型模式 · 非 mock】"
 echo "============================================================"
@@ -52,7 +68,7 @@ echo
 missing=0
 probe() { # $1=名称  $2=URL
   local code
-  # --noproxy '*'：本机有 HTTP_PROXY(127.0.0.1:5209)，不绕过会把本地端口探测
+  # --noproxy '*': 本机有 HTTP_PROXY(127.0.0.1:5209)，不绕过会把本地端口探测
   # 发给代理并得到假 502，必须直连本机端口
   # 注意：不要再加 `|| echo 000`——curl 连接失败时 -w 本身已输出 000，追加会变成 000000
   code="$(curl -s -o /dev/null -w '%{http_code}' --noproxy '*' --max-time 3 "$2/models" 2>/dev/null)"
