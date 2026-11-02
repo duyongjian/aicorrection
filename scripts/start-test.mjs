@@ -17,16 +17,31 @@
  *   node scripts/start-test.mjs --check   # 只做预检，不启动
  */
 import http from 'node:http';
-import { spawn } from 'node:child_process';
+import { spawn, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import readline from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const SELF_FILE = fileURLToPath(import.meta.url);
 const ROOT = path.resolve(__dirname, '..');
 const ENV_FILE = path.join(ROOT, 'apps', 'api', '.env');
 const CHECK_ONLY = process.argv.includes('--check');
+const NO_REEXEC = process.argv.includes('--no-reexec');
+const NO_BROWSER = process.argv.includes('--no-browser');
+const NATIVE_PKG = 'better-sqlite3';
+
+// ═══ 0. 原生模块 ABI 自检 ═══════════════════════════════════════════════════
+// 背景：本机可能同时装了多个 Node（如 WorkBuddy 自带 v22 → ABI 127，fnm 的
+// v25 → ABI 141）。node_modules 里的 better_sqlite3.node 只对某一个 ABI 有效，
+// 若用另一个 Node 启动 API，会抛：
+//   ERR_DLOPEN_FAILED / NODE_MODULE_VERSION 127 vs 141
+// 且表现为 Vite 代理疯狂 ECONNREFUSED（后端根本没起来），非常难定位。
+// 因此这里在一切之前先验证，能就地纠正就静默纠正，纠正不了就给人话诊断。
+const runtime = await ensureNativeRuntime();
+if (runtime.reexeced) process.exit(runtime.exitCode);
 
 // ── 读取 .env 中的非敏感配置（URL / 模型名 / 端口），不碰任何密钥 ──────────────
 function readEnv(key, fallback = '') {
@@ -193,7 +208,7 @@ console.log('');
 
 // 后台延时打开浏览器
 const t = setTimeout(() => {
-  openBrowser('http://localhost:5173');
+  if (!NO_BROWSER) openBrowser('http://localhost:5173');
 }, 8000);
 
 console.log(`[3/3] 访问 http://localhost:5173 （API 健康检查 http://localhost:${API_PORT}/health）`);
@@ -204,13 +219,21 @@ clearTimeout(t);
 process.exit(devCode ?? 0);
 
 // ── helpers ─────────────────────────────────────────────────────────────────
-function run(cmd, args, opts) {
+function run(cmd, args, opts = {}) {
   return new Promise((resolve) => {
-    const child = spawn(cmd, args, {
-      cwd: ROOT,
-      shell: process.platform === 'win32',
-      ...opts,
-    });
+    let child;
+    if (process.platform === 'win32') {
+      // Windows 上 npm 是 .cmd，必须经 cmd.exe 转发。显式拼命令行而不是
+      // spawn(shell:true)，可避免 Node 22+ 的 DEP0190 弃用告警（未转义拼接）。
+      const line = [cmd, ...args].join(' ');
+      child = spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', line], {
+        cwd: ROOT,
+        stdio: 'inherit',
+        ...opts,
+      });
+    } else {
+      child = spawn(cmd, args, { cwd: ROOT, stdio: 'inherit', ...opts });
+    }
     child.on('close', (code) => resolve(code ?? 0));
     child.on('error', () => resolve(1));
   });
@@ -228,4 +251,196 @@ function openBrowser(url) {
   } catch {
     /* 打开浏览器失败不影响主流程 */
   }
+}
+
+// ── 原生模块 ABI 相关 ────────────────────────────────────────────────────────
+
+/** 用指定 node 试跑一次真实建库；成功返回 {ok:true}，失败带回首行错误。 */
+// 注意：只 require 不够 —— better-sqlite3 的 .node 绑定在 new Database() 时才真正
+// dlopen，日志里的崩溃点正是 database.js:48 的构造函数。必须建库+查询才算验证通过。
+function tryLoadNative(nodeExe) {
+  const script = [
+    'try {',
+    `  const D = require(${JSON.stringify(NATIVE_PKG)});`,
+    '  const db = new D(":memory:");',
+    '  db.prepare("select 1 as x").get();',
+    '  db.close();',
+    '  process.exit(0);',
+    '} catch (e) {',
+    '  console.error((e && e.message) || String(e));',
+    '  process.exit(9);',
+    '}',
+  ].join('\n');
+  try {
+    execFileSync(nodeExe, ['-e', script], {
+      cwd: ROOT,
+      stdio: ['ignore', 'ignore', 'pipe'],
+      timeout: 30000,
+      encoding: 'utf8',
+      windowsHide: true,
+    });
+    return { ok: true, detail: '' };
+  } catch (e) {
+    const raw = String(e?.stderr || e?.message || '').trim();
+    return { ok: false, detail: raw.split(/\r?\n/)[0] || 'unknown' };
+  }
+}
+
+/** 读取指定 node 的版本与 ABI；不可执行返回 null。 */
+function nodeInfo(nodeExe) {
+  try {
+    const out = execFileSync(
+      nodeExe,
+      ['-p', 'process.version + " ABI=" + process.versions.modules'],
+      { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'ignore'], windowsHide: true }
+    );
+    return out.trim();
+  } catch {
+    return null;
+  }
+}
+
+/** 收集本机可能存在的 node 可执行文件（PATH + 常见版本管理器目录）。 */
+function discoverNodes() {
+  const exe = process.platform === 'win32' ? 'node.exe' : 'node';
+  const found = new Set();
+  const push = (p) => {
+    if (!p) return;
+    try {
+      if (fs.existsSync(p) && fs.statSync(p).isFile()) found.add(path.resolve(p));
+    } catch {
+      /* ignore */
+    }
+  };
+
+  // ① PATH 中每一段
+  for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
+    if (dir) push(path.join(dir, exe));
+  }
+
+  // ② 版本管理器目录（WorkBuddy / fnm / nvm-windows / Volta / 官方安装包）
+  const home = os.homedir();
+  const roots = [
+    path.join(home, '.workbuddy', 'binaries', 'node', 'versions'),
+    process.env.FNM_DIR ? path.join(process.env.FNM_DIR, 'node-versions') : '',
+    path.join(process.env.APPDATA || '', 'fnm', 'node-versions'),
+    path.join(process.env.LOCALAPPDATA || '', 'fnm', 'node-versions'),
+    path.join(process.env.APPDATA || '', 'nvm'),
+    'C:\\nvm4w\\nodejs',
+    path.join(process.env.ProgramFiles || 'C:\\Program Files', 'nodejs'),
+    path.join(process.env.LOCALAPPDATA || '', 'Volta', 'tools', 'image', 'node'),
+  ];
+
+  for (const root of roots) {
+    if (!root || !fs.existsSync(root)) continue;
+    let subs = [];
+    try {
+      subs = fs.readdirSync(root, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const d of subs) {
+      if (!d.isDirectory()) continue;
+      // .../v22.22.2-6/node.exe（WorkBuddy）
+      push(path.join(root, d.name, exe));
+      // .../v25.2.1/installation/node.exe（fnm）
+      push(path.join(root, d.name, 'installation', exe));
+      // .../v20.11.0/node.exe 之外，nvm 也可能是 .../v20.11.0/x64/node.exe
+      push(path.join(root, d.name, 'x64', exe));
+      push(path.join(root, d.name, 'bin', exe));
+    }
+  }
+
+  return [...found];
+}
+
+/** 用兼容的 node 重新执行本脚本（并把它的目录前置到 PATH，让 npm/npx 同源）。 */
+function reexecWith(nodeExe) {
+  return new Promise((resolve) => {
+    const dir = path.dirname(nodeExe);
+    const env = {
+      ...process.env,
+      PATH: dir + path.delimiter + String(process.env.PATH || ''),
+    };
+    const child = spawn(nodeExe, [SELF_FILE, ...process.argv.slice(2), '--no-reexec'], {
+      cwd: ROOT,
+      stdio: 'inherit',
+      env,
+    });
+    child.on('close', (code, signal) => resolve(signal ? 1 : code ?? 0));
+    child.on('error', () => resolve(1));
+  });
+}
+
+/**
+ * 保证当前 Node 能加载 better-sqlite3。
+ * 返回 { reexeced: true, exitCode } 表示已切换到兼容 Node 并执行完毕；
+ * 否则返回 { ok: true }。
+ */
+async function ensureNativeRuntime() {
+  const self = process.execPath;
+  console.log('[运行环境] 原生模块 ABI 自检 ...');
+
+  const first = tryLoadNative(self);
+  if (first.ok) {
+    console.log(
+      `  [就绪] ${NATIVE_PKG} 可加载  (Node ${process.version}, ABI ${process.versions.modules})`
+    );
+    return { ok: true };
+  }
+
+  console.log(
+    `  [警告] 当前 Node ${process.version}（ABI ${process.versions.modules}）无法加载 ${NATIVE_PKG}`
+  );
+  console.log(`         ${first.detail}`);
+
+  // ① 先找本机其它能直接加载的 Node（零成本，优先；不破坏现有二进制）
+  if (!NO_REEXEC) {
+    const candidates = discoverNodes().filter(
+      (p) => path.resolve(p) !== path.resolve(self)
+    );
+    const tried = [];
+    for (const exe of candidates) {
+      const info = nodeInfo(exe);
+      if (!info) continue;
+      if (tryLoadNative(exe).ok) {
+        console.log(`  [修复] 找到兼容 Node：${exe}`);
+        console.log(`         ${info} → 自动切换并重启本脚本`);
+        console.log('');
+        const code = await reexecWith(exe);
+        return { reexeced: true, exitCode: code };
+      }
+      tried.push(`${info}  ${exe}`);
+    }
+    if (tried.length > 0) {
+      console.log('  [信息] 已排查以下 Node，均无法加载当前二进制：');
+      for (const t of tried) console.log(`         ${t}`);
+    }
+  }
+
+  // ② 没有现成的 → 就地重建二进制（可能触发源码编译，耗时较长）
+  console.log('  [修复] 尝试为当前 Node 重建原生模块（可能需要几分钟）...');
+  const rebuildCode = await run('npm', ['rebuild', NATIVE_PKG, '--update-binary']);
+  if (rebuildCode === 0 && tryLoadNative(self).ok) {
+    console.log(`  [修复] 重建成功，${NATIVE_PKG} 已适配 ABI ${process.versions.modules}`);
+    return { ok: true };
+  }
+
+  // ③ 全失败 → 给出人话诊断，而不是让 API 一启动就崩
+  console.error('');
+  console.error('  ✗ 无法让 better-sqlite3 与当前 Node 匹配。API 启动必然失败，已中止。');
+  console.error('');
+  console.error(`    当前 Node : ${process.version}  ABI=${process.versions.modules}  ${self}`);
+  console.error(`    原生二进制 : ${path.join(ROOT, 'node_modules', NATIVE_PKG, 'build', 'Release', 'better_sqlite3.node')}`);
+  console.error('');
+  console.error('    请任选一种方式处理：');
+  console.error('      A) 切到与二进制匹配的 Node 后重跑（推荐，最快）：');
+  console.error('         fnm use 22      # 或 nvm use 22.22.2');
+  console.error('         npm run start:test');
+  console.error('      B) 为当前 Node 重新编译（需已安装 VS Build Tools）：');
+  console.error('         npm rebuild better-sqlite3 --update-binary');
+  console.error('      C) 重装依赖（会按当前 Node 重新下载预编译二进制）：');
+  console.error('         rmdir /s /q node_modules && npm install');
+  console.error('');
+  process.exit(1);
 }
