@@ -1,0 +1,60 @@
+{
+  "version": "v0.1-seed",
+  "note": "K1.3 归因质量盲评种子集。expert_ref 暂为 null，等专家盲评时填入；填入后 harness 会自动算命中率。每条案例都用 mode 显式指定走诊断还是讲解。",
+  "cases": [
+    {
+      "id": "m01",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "question": "设 $z=z(x,y)$ 由方程 $F(x,y,z)=x+ay+e^{y+az}=0$ 确定，求 $\\frac{\\partial z}{\\partial x}-\\frac{\\partial z}{\\partial y}$。",
+      "user_answer": "两边对 x 求导得 $1+a e^{y+az} z_x=0$，所以 $z_x=-\\frac{1}{a e^{y+az}}$；同理 $z_y=-\\frac{1}{a e^{y+az}}$，故结果为 0。",
+      "expert_ref": null
+    },
+    {
+      "id": "m02",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "question": "求 $\\lim_{x\\to 0}\\frac{e^{x}-1-x}{x^{2}}$。",
+      "user_answer": "用洛必达一次得 $\\lim_{x\\to 0}\\frac{e^{x}-1}{2x}$，再洛必达得 $\\lim_{x\\to 0}\\frac{e^{x}}{2}=\\frac{1}{2}$。",
+      "expert_ref": null
+    },
+    {
+      "id": "m03",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "偏难",
+      "question": "计算 $\\int_{0}^{1} x\\sqrt{1-x^{2}}\\,dx$。",
+      "user_answer": "令 $t=1-x^{2}$，则 $dt=-2x\\,dx$，原式 $=-\\frac{1}{2}\\int_{0}^{1}\\sqrt{t}\\,dt=-\\frac{1}{3}$。",
+      "expert_ref": null
+    },
+    {
+      "id": "m04",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "question": "已知 $f(x)=x^{3}-3x$，求其在区间 $[-2,2]$ 上的最大值与最小值。",
+      "user_answer": "$f'(x)=3x^{2}-3=0$ 得 $x=\\pm 1$，$f(1)=-2$，$f(-1)=2$，所以最大值 2，最小值 $-2$。",
+      "expert_ref": null
+    },
+    {
+      "id": "m05",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "question": "设 $z=z(x,y)$ 由 $x+ay+e^{y+az}=0$ 确定，求 $\\frac{\\partial z}{\\partial x}$ 与 $\\frac{\\partial z}{\\partial y}$，并说明二者之差。",
+      "user_answer": null,
+      "expert_ref": null
+    },
+    {
+      "id": "m06",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "偏难",
+      "question": "判断级数 $\\sum_{n=1}^{\\infty}\\frac{(-1)^{n}}{\\sqrt{n}}$ 是绝对收敛、条件收敛还是发散，并说明理由。",
+      "user_answer": null,
+      "expert_ref": null
+    }
+  ]
+}

@@ -52,6 +52,14 @@ export const ATTR_SYSTEM_NOANSWER = `你是一名资深学科讲师，擅长"讲
 
 export const FOLLOWUP_SYSTEM = `[FOLLOWUP_MODE] 你是苏格拉底式追问教练。针对用户对已归因结果的追问，给出一步更深层的补充归因解读（1-3 句），引导用户从"为什么"出发再拆解，而非直接给答案。`;
 
+/** 诊断模式 user 消息尾（与 promptVariants 共用，确保 A/B 时只有 system 是变量） */
+export const ATTR_TAIL_DIAGNOSE =
+  '请聚焦识别真实存在的具体错因，克制推导篇幅，最终务必输出三行结论（错因/知识点/本质）。\n请按格式输出诊断：';
+
+/** 讲解模式 user 消息尾（同上） */
+export const ATTR_TAIL_TEACH =
+  '请按讲解模式输出 正确答案 / 正确推导 / 常见陷阱 / 知识点 / 本质 五段，正确推导每步用 $$ 包裹并独占一行。\n直接输出，不要前言与总结：';
+
 export function attrUserPrompt(
   question: string,
   userAnswer?: string,
@@ -66,9 +74,7 @@ export function attrUserPrompt(
   const refPart = referenceBlock && referenceBlock.trim()
     ? `\n\n${referenceBlock}`
     : '';
-  const tail = opts?.teach
-    ? '请按讲解模式输出 正确答案 / 正确推导 / 常见陷阱 / 知识点 / 本质 五段，正确推导每步用 $$ 包裹并独占一行。\n直接输出，不要前言与总结：'
-    : '请聚焦识别真实存在的具体错因，克制推导篇幅，最终务必输出三行结论（错因/知识点/本质）。\n请按格式输出诊断：';
+  const tail = opts?.teach ? ATTR_TAIL_TEACH : ATTR_TAIL_DIAGNOSE;
   return `题干：\n${question.trim()}${ansPart}${refPart}\n${tail}`;
 }
 

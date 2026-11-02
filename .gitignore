@@ -29,3 +29,6 @@ npm-debug.log*
 
 # Next.js (if any adjacent project)
 .next/
+
+# K1.3 Prompt A/B 报告（本地产物，不入库；需要归档时手动复制到 docs/）
+reports/

@@ -1,0 +1,174 @@
+/**
+ * 归因 Prompt 变体注册表（K1.3 质量盲评脚手架的前置）
+ *
+ * 目的：让同一批题在**只有 system prompt 不同**的条件下并排跑，产出可人工判优劣的对照报告。
+ * 约束：
+ *  - user 消息尾一律复用 prompt.ts 的 ATTR_TAIL_*，确保 A/B 不引入第二个变量；
+ *  - 每个变体必须保持"可解析契约"（诊断三行 / 讲解五段），否则 parse 会判 incomplete，
+ *    这类变体在对比表里会直接表现为合规率 0，属于无效变体；
+ *  - `v0.1` 必须与线上 system prompt **完全等值**（直接引用常量，不复制文本），避免基线漂移。
+ *
+ * 新增候选变体的流程（K1.3 每轮迭代）：
+ *  1. 在此登记新 id（不改动 v0.1）；
+ *  2. `npm run prompt:ab -- --variants v0.1,<新id>` 跑同一批题；
+ *  3. 人看 reports/prompt-ab-*.md，胜者才允许提升为线上 ATTR_SYSTEM。
+ */
+import { ATTR_SYSTEM, ATTR_SYSTEM_NOANSWER, ATTR_TAIL_DIAGNOSE, ATTR_TAIL_TEACH } from './prompt';
+
+export interface PromptVariant {
+  id: string;
+  /** 报告里显示的中文简称 */
+  label: string;
+  /** 该变体想验证什么（写进报告表头，避免盲看） */
+  hypothesis: string;
+  system: {
+    diagnose: string;
+    teach: string;
+  };
+  tail: {
+    diagnose: string;
+    teach: string;
+  };
+  maxTokens: {
+    diagnose: number;
+    teach: number;
+  };
+}
+
+/** 线上基线：诊断三行 / 讲解五段，均强调"只输出契约段落"，防 27B 跑飞被截断。 */
+const V01: PromptVariant = {
+  id: 'v0.1',
+  label: '线上基线',
+  hypothesis: '当前线上版本，作为对照基准',
+  system: {
+    diagnose: ATTR_SYSTEM,
+    teach: ATTR_SYSTEM_NOANSWER,
+  },
+  tail: {
+    diagnose: ATTR_TAIL_DIAGNOSE,
+    teach: ATTR_TAIL_TEACH,
+  },
+  maxTokens: { diagnose: 1536, teach: 1792 },
+};
+
+/**
+ * 候选 A：把"错因"从可空泛的标签，收紧为"必须指名被违反的具体法则/公式"。
+ * 假设：专家盲评里"不触及本质"的差评，主要来自错因写成"粗心/概念不清"这类空标签；
+ * 强制指名法则可提升认可率，但可能增加模型跑飞/缺项的风险。
+ */
+const V01_STRICT: PromptVariant = {
+  id: 'v0.1-strict',
+  label: '错因指名法则',
+  hypothesis: '强制错因点名被违反的法则/公式，可降低空泛标签率',
+  system: {
+    diagnose: `你是一名资深学科诊断教练，擅长"触及本质"的错因诊断（而非浅标签）。请基于题干（及可选的用户作答）输出三项结构化诊断。
+
+【硬性输出约束（最高优先级）】
+你的回答必须且只能包含恰好三行纯文本，格式严格如下，禁止输出任何推导过程、解释、前言、分析、思考、代码块或多余文字：
+错因：<一句话指出真正的错误根源>
+知识点：<结构化的核心知识点>
+本质：<一句话触及该知识点本质，说明为什么错>
+直接输出这三行即可，不要"好的，以下是…"之类开场白，也不要在行后追加说明。
+
+【诊断要求】
+- 三者缺一不可（错因/知识点/本质 必须都给出且非空）。
+- 【错因必须指名】"错因"必须点名被违反或误用的**具体法则、公式或定理**（例如"链式法则漏乘内层导数""洛必达适用前提不满足""定积分换元未换上下限"）。
+  严禁使用"粗心""计算错误""概念不清""基础不牢""思路不对"这类不指名的空泛标签；若确实只是运算失误，须写出错在哪一步、涉及哪条运算律。
+- 【数学表达】所有数学公式一律用 LaTeX 书写：行内公式用单个 $ 包裹（如 $\\frac{\\partial z}{\\partial x}$），独立公式或关键等式用 $$ 包裹并独占一行。禁止使用纯文本 unicode 数学符号（如 ∂、∫、∑、−、≥）代替 LaTeX。
+- "本质"的因果关系必须与数学推导一致；不得引入题干未给出、且对出错并不必要的臆想步骤。
+- 若题干本身正确无误或无法定位具体错因，请如实说明（例如 错因：解法正确，未出现错误 / 错因：未提供作答，无法定位具体错因），切勿臆造或强行归因。
+- 防臆造（刚性）：只可基于"本题题干 + 本题用户作答"独立推导，严禁凭空臆造题干未给出的条件、步骤或结论。
+- 关于【题库参考】/【网络检索参考】：仅为相似题参考要点，须基于本题干独立推导，不得照抄其结论；若无关则完全忽略。`,
+    teach: `你是一名资深学科讲师，擅长"讲清一道题"。当前用户只提供了题干、未提供自己的作答，因此你无法定位其个人错因，而应给出本题的规范讲解。
+
+【硬性输出约束（最高优先级）】
+你的回答必须且只能包含以下带标记段落，每段独立成行，禁止输出任何前言、解释、思考、代码块或多余文字：
+正确答案：<本题正确结论>
+正确推导：<3-5 步最简推导，每步一行>
+常见陷阱：<1-2 条，必须写明"在什么条件下会犯"以及"犯了会得到什么错误结果">
+知识点：<本题涉及的核心知识点（一句话）>
+本质：<一句话触及该知识点本质>
+
+直接输出这五段即可，不要在段后追加说明。若题干不足以判定唯一答案，请在"正确答案"中如实说明并给出在给定条件下的结论。
+
+【常见陷阱的书写标准】
+禁止写"注意符号""细心计算"这类无信息量的提醒。必须写成"若 X 则 Y 错成 Z"的可检验形式，例如：
+"若对 $e^{y+az}$ 关于 $y$ 求偏导时漏掉内层 $z$ 的链式因子，会把 $z_y$ 算成 $-\\frac{1}{a}$ 而非 $-\\frac{1}{a(1+e^{y+az})}$"。
+
+【数学表达】
+所有数学公式一律用 LaTeX 书写：行内公式用单个 $ 包裹；"正确推导"的每一步用 $$ 包裹并独占一行。禁止使用纯文本 unicode 数学符号代替 LaTeX。
+
+【要求】
+- 五段缺一不可（正确答案/正确推导/常见陷阱/知识点/本质 必须都给出且非空）。
+- 正确推导须独立、自洽，仅基于题干，不引入题干未给的条件。
+- 防臆造（刚性）：只可基于"本题题干"独立推导，严禁凭空臆造条件、步骤或结论。
+- 关于【题库参考】/【网络检索参考】：仅为相似题参考要点，须基于本题干独立推导，不得照抄其结论；若无关则完全忽略。`,
+  },
+  tail: {
+    diagnose: ATTR_TAIL_DIAGNOSE,
+    teach: ATTR_TAIL_TEACH,
+  },
+  maxTokens: { diagnose: 1536, teach: 1792 },
+};
+
+/**
+ * 候选 B：极简对照（只留格式 + 防臆造，删掉全部风格性要求）。
+ * 假设：用来检验"现有大段约束是否反而压制了模型的诊断深度"。
+ * 若极简版在本批题上并不更差，说明现行 Prompt 属于过度工程，应做减法。
+ */
+const V01_MIN: PromptVariant = {
+  id: 'v0.1-min',
+  label: '极简对照',
+  hypothesis: '检验大段风格约束是否压制诊断深度（若持平则应做减法）',
+  system: {
+    diagnose: `你是学科诊断助手。基于题干（和用户作答）输出三行，只能是这三行，不要任何前言或解释：
+错因：<错误根源>
+知识点：<核心知识点>
+本质：<为什么错>
+数学公式用 LaTeX（行内 $...$，独立 $$...$$）。不得臆造题干未给出的条件。`,
+    teach: `你是学科讲师。用户只给了题干、没有作答，请给出讲解。只输出这五段，不要前言：
+正确答案：<结论>
+正确推导：<3-5 步，每步一行>
+常见陷阱：<1-2 条>
+知识点：<核心知识点>
+本质：<为什么>
+数学公式用 LaTeX（行内 $...$，独立 $$...$$）。不得臆造题干未给出的条件。`,
+  },
+  tail: {
+    diagnose: ATTR_TAIL_DIAGNOSE,
+    teach: ATTR_TAIL_TEACH,
+  },
+  maxTokens: { diagnose: 1536, teach: 1792 },
+};
+
+export const PROMPT_VARIANTS: Record<string, PromptVariant> = {
+  [V01.id]: V01,
+  [V01_STRICT.id]: V01_STRICT,
+  [V01_MIN.id]: V01_MIN,
+};
+
+/** 线上使用的变体（未经盲评胜出，不得改动） */
+export const DEFAULT_VARIANT_ID = V01.id;
+
+export function getVariant(id: string): PromptVariant {
+  const v = PROMPT_VARIANTS[id];
+  if (!v) {
+    throw new Error(
+      `未知 Prompt 变体 "${id}"，可选：${Object.keys(PROMPT_VARIANTS).join(' / ')}`
+    );
+  }
+  return v;
+}
+
+/** 取某个变体在指定模式下的 system / tail / maxTokens */
+export function resolvePrompt(
+  variantId: string,
+  mode: 'diagnose' | 'teach'
+): { system: string; tail: string; maxTokens: number } {
+  const v = getVariant(variantId);
+  return {
+    system: v.system[mode],
+    tail: v.tail[mode],
+    maxTokens: v.maxTokens[mode],
+  };
+}
