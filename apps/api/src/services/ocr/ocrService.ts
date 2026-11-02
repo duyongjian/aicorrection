@@ -20,6 +20,7 @@ import {
   type LocalOcrEngine,
 } from './localOcrService';
 import { validateLatex } from './latexGuard';
+import { withTimeout } from '../../utils/promise';
 
 export interface OcrResult {
   ocr_status: OcrStatus;
@@ -86,26 +87,88 @@ export function recognizeText(rawText?: string): OcrResult {
   };
 }
 
-/** 图片入口：本地 OCR 优先，按 OCR_MODE 决定是否降级视觉大模型。 */
+/** 图片入口：本地 OCR 优先，按 OCR_MODE 决定是否叠加/降级视觉大模型。 */
 export async function recognizeImage(
   imagePath: string,
   opts: RecognizeImageOpts = {}
 ): Promise<OcrResult> {
-  if (env.OCR_MODE !== 'llm') {
+  if (env.OCR_MODE === 'llm') {
+    // 纯视觉大模型模式（含探活 + 可选 mock 兜底）
+    return recognizeImageByLlm(imagePath);
+  }
+  if (env.OCR_MODE === 'local') {
+    // 纯本地 OCR，不让步：本地失败（含未识别到文本）如实返回 fail，绝不抛 500。
     try {
       return await recognizeImageLocal(imagePath, opts);
     } catch {
-      // local 模式：不让步，直接 fail；auto 模式：继续降级到视觉大模型
-      if (env.OCR_MODE === 'local') {
-        return { ocr_status: 'fail', question: '', latex: null };
-      }
+      return { ocr_status: 'fail', question: '', latex: null };
     }
   }
-  // 识别端按需拉起：未开启自动拉起时这里是一次纯探活，行为与改造前一致。
-  // 拉起失败/超时 = 如实返回 fail，绝不产出占位假数据。
+
+  // auto（默认）：本地 OCR 优先；成功后再叠加视觉大模型描述（OCR_COMBO）做交叉核对。
+  const local = await recognizeImageLocalSafe(imagePath, opts);
+  if (!local) {
+    // 本地完全失败（未识别到任何文本）→ 降级视觉大模型（内部含探活 + 可选 mock 兜底）
+    const ready = await ensureRecognitionReady();
+    if (!ready) return { ocr_status: 'fail', question: '', latex: null };
+    return recognizeImageByLlm(imagePath);
+  }
+  if (env.OCR_COMBO) {
+    // 视觉大模型作为第二路证据：成功则合并，失败则静默保留本地结果（绝不 mock）。
+    const vision = await recognizeVisionSafe(imagePath).catch(() => null);
+    if (vision) return mergeOcr(local, vision);
+  }
+  return local;
+}
+
+/** 本地 OCR 安全包装：任何异常（含未识别到文本）都返回 null，由上层决定降级策略。 */
+async function recognizeImageLocalSafe(
+  imagePath: string,
+  opts: RecognizeImageOpts
+): Promise<OcrResult | null> {
+  try {
+    return await recognizeImageLocal(imagePath, opts);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 视觉大模型语义描述（MiniCPM-V 等），识别双通道的第二路证据。
+ * 失败/不可达/超时 → 返回 null（不 mock、不抛错，由 mergeOcr 上层决定是否仍用本地结果）。
+ */
+async function recognizeVisionSafe(imagePath: string): Promise<OcrResult | null> {
   const ready = await ensureRecognitionReady();
-  if (!ready) return { ocr_status: 'fail', question: '', latex: null };
-  return recognizeImageByLlm(imagePath);
+  if (!ready) return null;
+  const provider = getRecognitionProvider();
+  const base64 = fs.readFileSync(imagePath).toString('base64');
+  try {
+    const res = await withTimeout(
+      provider.chatWithImage(base64, OCR_PROMPT),
+      env.OCR_LOCAL_TIMEOUT_MS
+    );
+    const text = (res.text ?? '').trim();
+    if (!text) return null;
+    return { ocr_status: 'success', question: text, latex: null };
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * 合并本地 OCR 与视觉大模型结果：二者拼接成同一题干，一起交给归因大模型交叉核对。
+ * 本地 OCR 擅长精确字符（含公式块），视觉模型擅长整体语义/排版，互补可减少识别误差。
+ */
+function mergeOcr(local: OcrResult, vision: OcrResult): OcrResult {
+  const parts = [`【本地OCR识别】\n${local.question}`];
+  if (vision.question.trim()) {
+    parts.push(`【视觉模型描述(MiniCPM-V)】\n${vision.question.trim()}`);
+  }
+  return {
+    ocr_status: local.ocr_status === 'success' ? 'success' : 'partial',
+    question: parts.join('\n\n'),
+    latex: local.latex ?? null,
+  };
 }
 
 /**

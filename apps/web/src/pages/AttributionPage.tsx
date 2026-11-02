@@ -104,7 +104,7 @@ export default function AttributionPage() {
       {/* 识别结果：让用户核对 OCR 是否准确 */}
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
         <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-          识别结果
+          识别结果（本地OCR + 视觉模型 MiniCPM-V 双通道，可对照核对）
         </Typography>
         <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
           {loop.question}

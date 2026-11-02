@@ -22,12 +22,12 @@ import type {
 } from '@aicorrection/shared';
 
 /**
- * 前端全局请求超时。必须严格大于后端 ATTRIBUTION_TIMEOUT_MS（当前 300s），
- * 留出充足缓冲：否则分析模型一旦 >300s（27B 本地模型在 8GB 显存上极易触发），
- * 后端刚回 `analyzing`、前端已因等长的 300s 超时 abort，误报"归因请求失败"。
- * 这里取 360s，保证后端任何 200 响应都能被前端完整收到（再慢也只是拿到 analyzing 态）。
+ * 前端全局请求超时。必须严格大于后端 ATTRIBUTION_TIMEOUT_MS（当前 600s），
+ * 留出缓冲：否则分析模型一旦 >600s（27B 本地模型在受限显存上极易触发），
+ * 后端刚回 `analyzing`、前端已因等长超时 abort，误报"归因请求失败"。
+ * 这里取 660s（11min），保证后端任何 200 响应都能被前端完整收到（再慢也只是拿到 analyzing 态）。
  */
-const REQUEST_TIMEOUT_MS = 360_000;
+const REQUEST_TIMEOUT_MS = 660_000;
 
 const http = axios.create({
   baseURL: '/api/v1',

@@ -73,10 +73,12 @@ export const env = {
   DISABLE_THINKING: toBool(process.env.DISABLE_THINKING, true),
 
   // 调用超时（可配置）。默认按分析强模型 Qwen3.8-27B @ RTX4060 8GB 显存标定：
-  // 显存不足导致层溢出 CPU，~3 tok/s；thinking 关闭后实测单次归因 161s，
-  // 300s 留约 1.8x 余量；追问走同一强模型，180s 留约 1.1x（追问更短）。
-  ATTRIBUTION_TIMEOUT_MS: toNum(process.env.ATTRIBUTION_TIMEOUT_MS, 300_000),
-  FOLLOWUP_TIMEOUT_MS: toNum(process.env.FOLLOWUP_TIMEOUT_MS, 180_000),
+  // 显存不足导致层溢出 CPU，~3 tok/s；thinking 关闭后实测单次归因 161s。
+  // 用户实测 27B 在受限显存上极易 >300s → 前端 axios 先 abort、误报"归因请求失败"。
+  // 故放宽到 600s（10min）留足余量；前端 REQUEST_TIMEOUT_MS 须严格大于此值。
+  ATTRIBUTION_TIMEOUT_MS: toNum(process.env.ATTRIBUTION_TIMEOUT_MS, 600_000),
+  // 追问走同一强模型，短回答但同样可能受慢速拖累；放宽到 300s 作安全网。
+  FOLLOWUP_TIMEOUT_MS: toNum(process.env.FOLLOWUP_TIMEOUT_MS, 300_000),
   /**
    * 分析强模型（27B）重试次数（"先重试再降级"策略，见 attributionService）。
    * 仅对"传输/连接"类快失败重试（模型崩了/没起来/瞬间 5xx）；对完整生成超时（模型在跑但慢）
@@ -96,6 +98,14 @@ export const env = {
     | 'tesseract',
   /** 命中数学信号时是否自动跑一次 Paddle 公式识别（PP-FormulaNet-S，~1.3s） */
   OCR_FORMULA_AUTO: toBool(process.env.OCR_FORMULA_AUTO, true),
+  /**
+   * 识别双通道合并（默认开）：auto 模式下本地 OCR 成功后，再调一次视觉大模型
+   * （MiniCPM-V 等，走 LLM_ 与 VISION_ 端点）做语义描述，与本地 OCR 结果拼接后
+   * 一起交给归因大模型交叉核对 —— 本地 OCR 擅长精确字符、视觉模型擅长整体语义，
+   * 二者互补可显著减少复杂数学题的识别误差（如公式/排版错乱、字符漏识）。
+   * false 则退回"本地 OCR 优先、失败才降级视觉"的旧行为（不主动调视觉）。
+   */
+  OCR_COMBO: toBool(process.env.OCR_COMBO, true),
   /** Python 解释器（指向装有 rapidocr/paddleocr/pytesseract 的 venv） */
   OCR_PYTHON:
     process.env.OCR_PYTHON ??
