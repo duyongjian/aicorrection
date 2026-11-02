@@ -126,11 +126,18 @@ export async function handleUpload(input: UploadInput): Promise<UploadResponse> 
   };
   createMistake(mistake);
 
+  // ⑤ 组装响应：图片入口返回可访问的 image_url（相对 API base 路径），文本入口为 null
+  const image_url =
+    mistake_ref && !mistake_ref.startsWith('hash:')
+      ? `${env.API_BASE_PATH}/uploads/${mistake_ref}`
+      : null;
+
   return {
     loop_id,
     mistake_id,
     ocr_status: ocr.ocr_status,
     question: ocr.question,
     latex: ocr.latex ?? null,
+    image_url,
   };
 }

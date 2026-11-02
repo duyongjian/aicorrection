@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -20,6 +20,14 @@ import DraftRestore from '../components/DraftRestore';
 import { describeError } from '../api/client';
 import { tracker } from '../tracking/sdk';
 
+/** 文件大小自适应格式化：<1MB 用 KB，否则 MB，均保留 1 位小数。 */
+function formatFileSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
+
 /** R01 上传：拍照 / 文本 / 粘贴 + 草稿恢复（UPL-01） */
 export default function UploadPage() {
   const navigate = useNavigate();
@@ -30,14 +38,41 @@ export default function UploadPage() {
   const [srcType, setSrcType] = useState<'photo' | 'text' | 'paste'>('text');
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 从草稿恢复时若草稿含图片名（但图片本身不落草稿），提示用户重新选择。 */
+  const [draftImageHint, setDraftImageHint] = useState<string | null>(null);
+  const inputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     void loadDrafts();
     // T2: screen_view 埋点 — 上传页
     tracker.screenView('upload');
   }, [loadDrafts]);
+
+  // 为选中的文件生成预览 URL，并在变化/卸载时释放，避免内存泄漏
+  useEffect(() => {
+    if (!file) {
+      setPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => {
+      URL.revokeObjectURL(url);
+    };
+  }, [file]);
+
+  /** 清空 input 的 value，否则再次选择同一文件不会触发 onChange。 */
+  const resetInput = (): void => {
+    if (inputRef.current) inputRef.current.value = '';
+  };
+
+  const removePhoto = (): void => {
+    setFile(null);
+    resetInput();
+  };
 
   const submit = async (): Promise<void> => {
     setError(null);
@@ -85,7 +120,12 @@ export default function UploadPage() {
     setSeg(d.segment);
     setSrcType(d.src_type);
     setText(d.raw_text ?? '');
+    // 草稿不存图片（既有设计），保持置空；若有图片名则提示需重新拍摄/选择
     setFile(null);
+    resetInput();
+    setDraftImageHint(
+      d.image_name ? `草稿不含图片，请重新拍摄/选择（原图：${d.image_name}）` : null
+    );
   };
 
   return (
@@ -129,16 +169,71 @@ export default function UploadPage() {
           </FormControl>
 
           {srcType === 'photo' ? (
-            <Button variant="outlined" component="label">
-              选择 / 拍摄照片
+            <Stack spacing={1.5}>
+              {/* 隐藏的原生文件输入，由下方按钮触发；单实例避免 ref 冲突 */}
               <input
+                ref={inputRef}
                 hidden
                 accept="image/*"
                 capture="environment"
                 type="file"
-                onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                onChange={(e) => {
+                  setFile(e.target.files?.[0] ?? null);
+                  setDraftImageHint(null);
+                }}
               />
-            </Button>
+              <Button
+                variant="outlined"
+                onClick={() => inputRef.current?.click()}
+              >
+                {file ? '重新选择照片' : '选择 / 拍摄照片'}
+              </Button>
+
+              {file && (
+                <Box>
+                  {previewUrl && (
+                    <Box
+                      component="img"
+                      src={previewUrl}
+                      alt="照片预览"
+                      sx={{
+                        maxWidth: '100%',
+                        maxHeight: 240,
+                        borderRadius: 1,
+                        border: '1px solid',
+                        borderColor: 'divider',
+                        display: 'block',
+                        mb: 1,
+                      }}
+                    />
+                  )}
+                  <Typography variant="body2" color="text.secondary">
+                    {file.name}（{formatFileSize(file.size)}）
+                  </Typography>
+                  <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
+                    <Button
+                      size="small"
+                      variant="text"
+                      onClick={() => inputRef.current?.click()}
+                    >
+                      重新选择
+                    </Button>
+                    <Button
+                      size="small"
+                      variant="text"
+                      color="error"
+                      onClick={removePhoto}
+                    >
+                      移除照片
+                    </Button>
+                  </Stack>
+                </Box>
+              )}
+
+              {draftImageHint && (
+                <Alert severity="info">{draftImageHint}</Alert>
+              )}
+            </Stack>
           ) : (
             <TextField
               multiline

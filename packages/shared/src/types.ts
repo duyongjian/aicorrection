@@ -160,6 +160,8 @@ export interface UploadResponse {
   question: string;
   /** 公式识别得到的 LaTeX；非公式/未启用公式识别时为 null。可选以保证旧消费方兼容。 */
   latex?: string | null;
+  /** 原图可访问 URL（相对路径，如 /api/v1/uploads/m_xxx.jpg）；文本/粘贴入口为 null。 */
+  image_url?: string | null;
 }
 
 // ===================== 归因 (R02 / ATT-02) =====================

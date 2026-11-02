@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Box, Button, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, Paper, Stack, Typography } from '@mui/material';
 import { useLoop } from '../hooks/useLoop';
 import AttributionCard from '../components/AttributionCard';
 import RateActions from '../components/RateActions';
@@ -20,6 +20,7 @@ export default function AttributionPage() {
   const [status, setStatus] = useState<Status>('idle');
   const [showFollowup, setShowFollowup] = useState(false);
   const [rated, setRated] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   useEffect(() => {
     if (!loop) {
@@ -51,6 +52,61 @@ export default function AttributionPage() {
       </Typography>
 
       <OcrFeedback ocrStatus={loop.ocr_status} />
+
+      {/* 原图回显：仅图片入口有 image_url */}
+      {loop.image_url && (
+        <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+          <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+            上传原图
+          </Typography>
+          {imageError ? (
+            <Alert severity="warning">原图加载失败（可能已被清理）</Alert>
+          ) : (
+            <Box
+              component="a"
+              href={loop.image_url}
+              target="_blank"
+              rel="noreferrer"
+              sx={{ display: 'inline-block' }}
+            >
+              <Box
+                component="img"
+                src={loop.image_url}
+                alt="上传原图"
+                onError={() => setImageError(true)}
+                sx={{
+                  maxWidth: '100%',
+                  maxHeight: 320,
+                  objectFit: 'contain',
+                  borderRadius: 1,
+                  border: '1px solid',
+                  borderColor: 'divider',
+                  display: 'block',
+                }}
+              />
+            </Box>
+          )}
+        </Paper>
+      )}
+
+      {/* 识别结果：让用户核对 OCR 是否准确 */}
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+          识别结果
+        </Typography>
+        <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
+          {loop.question}
+        </Typography>
+        {loop.latex && (
+          <Typography
+            variant="caption"
+            color="text.secondary"
+            sx={{ display: 'block', mt: 1, fontFamily: 'monospace' }}
+          >
+            LaTeX：{loop.latex}
+          </Typography>
+        )}
+      </Paper>
 
       {(status === 'loading' || status === 'analyzing') && <AnalyzingState />}
 

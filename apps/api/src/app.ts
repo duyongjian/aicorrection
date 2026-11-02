@@ -137,6 +137,18 @@ export function createApp() {
 
   app.use(`${base}/account`, accountRoutes);
   app.use(`${base}/upload`, uploadRoutes);
+
+  // 上传原图只读静态服务（供前端回显）。仅暴露 uploads 目录，禁止目录列表与点文件。
+  app.use(
+    `${base}/uploads`,
+    express.static(env.UPLOAD_DIR, {
+      index: false,
+      dotfiles: 'deny',
+      fallthrough: false,
+      maxAge: '1h',
+    })
+  );
+
   app.use(`${base}/attribution`, attributionRoutes);
   // rate / followup 为 /attribution/:loop_id/... 子路径，挂在 base 下
   app.use(`${base}`, rateRoutes);
