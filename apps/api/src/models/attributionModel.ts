@@ -16,6 +16,7 @@ export function createAttribution(attribution: Attribution): void {
     .prepare(
       `INSERT INTO attributions (
         attribution_id, loop_id, anon_user_id, mistake_id,
+        question, user_answer,
         cause, knowledge_point, essence, correct_answer, derivation, pitfalls,
         attr_model_version, attr_latency_ms,
         rate_action, inaccurate_reason, expert_consistency, expert_accuracy,
@@ -23,6 +24,7 @@ export function createAttribution(attribution: Attribution): void {
         is_mock, is_internal
       ) VALUES (
         @attribution_id, @loop_id, @anon_user_id, @mistake_id,
+        @question, @user_answer,
         @cause, @knowledge_point, @essence, @correct_answer, @derivation, @pitfalls,
         @attr_model_version, @attr_latency_ms,
         @rate_action, @inaccurate_reason, @expert_consistency, @expert_accuracy,

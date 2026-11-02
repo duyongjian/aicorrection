@@ -206,6 +206,9 @@ export async function generateAttribution(
       loop_id: input.loop_id,
       anon_user_id: input.anon_user_id,
       mistake_id: input.mistake_id ?? null,
+      // K1.3 盲评回放：把题干与作答一起落库，否则事后无法复盘"学生怎么答/AI 怎么判"
+      question: input.question,
+      user_answer: input.user_answer?.trim() || null,
       cause: parsed.cause ?? null,
       knowledge_point: parsed.knowledge_point ?? null,
       essence: parsed.essence ?? null,
@@ -256,6 +259,9 @@ export async function generateAttribution(
     loop_id: input.loop_id,
     anon_user_id: input.anon_user_id,
     mistake_id: input.mistake_id ?? null,
+    // K1.3 盲评回放：题干照存，user_answer 在讲解模式下为空
+    question: input.question,
+    user_answer: null,
     // 无作答无法定位个人错因，错因行给状态说明；知识点/本质复用讲解内容。
     cause: '（未提供作答，已给出本题讲解）',
     knowledge_point: teaching.knowledge_point ?? null,

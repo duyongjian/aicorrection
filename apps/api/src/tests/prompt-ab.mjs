@@ -102,6 +102,30 @@ function similarity(a, b) {
   return union === 0 ? 0 : inter / union;
 }
 
+/** 取多行文本的最后一行（推导的收尾等式通常在末尾） */
+function lastLine(s) {
+  const ls = String(s || '')
+    .split(/\n+/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  return ls.length ? ls[ls.length - 1] : '';
+}
+
+/**
+ * 讲解模式自查：`正确答案` 是否被 `正确推导` 的最后一步支持。
+ *
+ * 动机：第一轮 m05 出现过"正确答案写 $-\frac{1}{e^{y+az}}$，推导里却是 $-\frac{1}{ae^{y+az}}$"的
+ * 自相矛盾——格式合规、内容错误，机器指标全绿。这里只做**筛查信号**（低相似度需人工看），
+ * 不作判定：答案写成简写、推导末行为中间步骤时也可能低分。
+ */
+const SELF_INCONSISTENT_THRESHOLD = 0.3;
+function answerDerivationSimilarity(parsed) {
+  const ans = parsed?.correct_answer || '';
+  const der = parsed?.derivation || '';
+  if (!ans || !der) return null;
+  return +similarity(ans, lastLine(der)).toFixed(2);
+}
+
 async function main() {
   const fsMod = fs;
   if (!fsMod.existsSync(SET_PATH)) {
@@ -148,6 +172,15 @@ async function main() {
       ...r,
       ok: r.mode === 'diagnose' ? Boolean(r.fields?.hasThree) : Boolean(r.fields?.hasCore),
       vague_cause: r.mode === 'diagnose' ? isVagueCause(r.fields?.cause) : null,
+      answer_derivation_similarity:
+        r.mode === 'teach' ? answerDerivationSimilarity(r.fields) : null,
+      answer_unsupported:
+        r.mode === 'teach'
+          ? (() => {
+              const s = answerDerivationSimilarity(r.fields);
+              return s === null ? null : s < SELF_INCONSISTENT_THRESHOLD;
+            })()
+          : null,
     }));
     console.log(`[ab] 复用结果重渲染：${path.relative(REPO_ROOT, src)}（${results.length} 条）`);
     emitReport({
@@ -233,11 +266,14 @@ async function main() {
       const ok = mode === 'diagnose' ? Boolean(parsed.hasThree) : Boolean(parsed.hasCore);
       const cause = mode === 'diagnose' ? parsed.cause : undefined;
       const kp = parsed.knowledge_point;
+      const ansSim = mode === 'teach' ? answerDerivationSimilarity(parsed) : null;
 
       results.push({
         case_id: c.id,
         mode,
         difficulty: c.difficulty ?? '',
+        subject: c.subject ?? '',
+        trap: Boolean(c.trap),
         variant: vid,
         ok,
         err,
@@ -246,6 +282,8 @@ async function main() {
         est_tokens: estTokens(text),
         has_latex: /\$[^$]+\$/.test(text),
         vague_cause: mode === 'diagnose' ? isVagueCause(cause) : null,
+        answer_derivation_similarity: ansSim,
+        answer_unsupported: ansSim !== null ? ansSim < SELF_INCONSISTENT_THRESHOLD : null,
         fields: parsed,
         text,
       });
@@ -289,6 +327,9 @@ function computeSummary(results) {
       latex: 0,
       vague: 0,
       vagueN: 0,
+      unsupported: 0,
+      unsupportedN: 0,
+      trapN: 0,
     };
     s.n++;
     if (r.ok) s.ok++;
@@ -299,6 +340,11 @@ function computeSummary(results) {
       s.vagueN++;
       if (r.vague_cause) s.vague++;
     }
+    if (r.answer_unsupported !== null && r.answer_unsupported !== undefined) {
+      s.unsupportedN++;
+      if (r.answer_unsupported) s.unsupported++;
+    }
+    if (r.trap) s.trapN++;
     byVariant.set(r.variant, s);
   }
   const avg = (arr) => (arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : 0);
@@ -308,11 +354,13 @@ function computeSummary(results) {
     hypothesis: VARIANTS[s.variant]?.hypothesis ?? '',
     n: s.n,
     ok: s.ok,
+    trap_n: s.trapN,
     compliance: s.n ? s.ok / s.n : 0,
     avg_latency_s: +(avg(s.latency) / 1000).toFixed(1),
     avg_chars: Math.round(avg(s.chars)),
     latex_rate: s.n ? s.latex / s.n : 0,
     vague_rate: s.vagueN ? s.vague / s.vagueN : null,
+    unsupported_rate: s.unsupportedN ? s.unsupported / s.unsupportedN : null,
   }));
 }
 
@@ -401,14 +449,15 @@ function renderMarkdown(payload, cases, variantIds) {
   L.push('');
   L.push('## 汇总');
   L.push('');
-  L.push('| 变体 | 说明 | 验证假设 | 合规率 | 平均耗时 | 平均字数 | LaTeX 覆盖 | 疑似空泛错因率 |');
-  L.push('|---|---|---|---|---|---|---|---|');
+  L.push('| 变体 | 说明 | 验证假设 | 合规率 | 平均耗时 | 平均字数 | LaTeX 覆盖 | 疑似空泛错因率 | 答案-推导不自洽率 |');
+  L.push('|---|---|---|---|---|---|---|---|---|');
   for (const s of payload.summary) {
     L.push(
-      `| \`${s.variant}\` | ${s.label} | ${s.hypothesis} | ${(s.compliance * 100).toFixed(0)}% (${Math.round(s.compliance * s.n)}/${s.n}) | ${s.avg_latency_s}s | ${s.avg_chars} | ${(s.latex_rate * 100).toFixed(0)}% | ${s.vague_rate === null ? '—' : (s.vague_rate * 100).toFixed(0) + '%'} |`
+      `| \`${s.variant}\` | ${s.label} | ${s.hypothesis} | ${(s.compliance * 100).toFixed(0)}% (${Math.round(s.compliance * s.n)}/${s.n}) | ${s.avg_latency_s}s | ${s.avg_chars} | ${(s.latex_rate * 100).toFixed(0)}% | ${s.vague_rate === null ? '—' : (s.vague_rate * 100).toFixed(0) + '%'} | ${s.unsupported_rate === null || s.unsupported_rate === undefined ? '—' : (s.unsupported_rate * 100).toFixed(0) + '%'} |`
     );
   }
   L.push('');
+  L.push('> 「答案-推导不自洽率」是筛查信号，不是判错：计算 `正确答案` 与 `正确推导` 末行的 2-gram 相似度，<0.30 视为可疑。它只能抓"答案与自己的推导对不上"，抓不到"两处都错但彼此一致"，所以仍需人工核对。');
   if (payload.case_diffs.length) {
     L.push('### 跨变体一致性（2-gram Jaccard，1.00=表述完全一致）');
     L.push('');
@@ -429,7 +478,7 @@ function renderMarkdown(payload, cases, variantIds) {
   for (const c of cases) {
     const rs = payload.results.filter((r) => r.case_id === c.id);
     if (!rs.length) continue;
-    L.push(`### ${c.id} · ${rs[0].mode} · ${c.difficulty || '-'}`);
+    L.push(`### ${c.id} · ${rs[0].mode} · ${c.difficulty || '-'}${c.trap ? ' · ⚠️ 陷阱题（作答本身正确）' : ''}`);
     L.push('');
     L.push(`**题干**：${String(c.question).replace(/\n/g, ' ')}`);
     L.push('');

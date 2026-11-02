@@ -42,6 +42,10 @@ export interface Attribution {
   loop_id: string;
   anon_user_id: string;
   mistake_id: string | null;
+  /** K1.3: 题干快照（用于盲评回放，一条归因即一条可复盘样本） */
+  question: string | null;
+  /** K1.3: 用户作答快照；无作答（讲解模式）时为 null */
+  user_answer: string | null;
   cause: string | null;
   knowledge_point: string | null;
   essence: string | null;

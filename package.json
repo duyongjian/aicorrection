@@ -18,7 +18,9 @@
     "start:test": "node scripts/start-test.mjs",
     "start:test:sh": "bash scripts/start-test.sh",
     "smoke": "npm run build:shared && tsx apps/api/src/tests/e2e-smoke.mjs",
-    "prompt:ab": "npm run build:shared && tsx apps/api/src/tests/prompt-ab.mjs"
+    "prompt:ab": "npm run build:shared && tsx apps/api/src/tests/prompt-ab.mjs",
+    "blind:export": "tsx apps/api/src/tests/blind-review.mjs export",
+    "blind:score": "tsx apps/api/src/tests/blind-review.mjs score"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

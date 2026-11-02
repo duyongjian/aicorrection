@@ -1,32 +1,35 @@
 {
-  "version": "v0.1-seed",
-  "note": "K1.3 归因质量盲评种子集。expert_ref 暂为 null，等专家盲评时填入；填入后 harness 会自动算命中率。每条案例都用 mode 显式指定走诊断还是讲解。 provisional_truth 为撰写者人工推导（非专家盲评结论），仅供对照，不可作为 G1 认可率依据。",
+  "version": "v0.1-seed2",
+  "note": "K1.3 归因质量盲评种子集（第二轮，30 题跨学科）。expert_ref 暂为 null，等专家盲评时填入；填入后 harness 会自动算命中率。每条案例都用 mode 显式指定走诊断还是讲解。provisional_truth 为撰写者人工推导（非专家盲评结论），仅供对照，不可作为 G1 认可率依据。trap=true 表示\"用户作答本身正确\"，用于检测模型是否强行归因（编错因）。",
   "cases": [
     {
       "id": "m01",
       "subject": "math",
       "mode": "diagnose",
       "difficulty": "中等",
+      "trap": false,
       "question": "设 $z=z(x,y)$ 由方程 $F(x,y,z)=x+ay+e^{y+az}=0$ 确定，求 $\\frac{\\partial z}{\\partial x}-\\frac{\\partial z}{\\partial y}$。",
       "user_answer": "两边对 x 求导得 $1+a e^{y+az} z_x=0$，所以 $z_x=-\\frac{1}{a e^{y+az}}$；同理 $z_y=-\\frac{1}{a e^{y+az}}$，故结果为 0。",
       "expert_ref": null,
-      "provisional_truth": "F=x+ay+e^{y+az}，F_x=1、F_y=a+e^{y+az}、F_z=a e^{y+az}。故 z_x=-1/(a e^{y+az})，z_y=-(a+e^{y+az})/(a e^{y+az})。学生把 z_y 写成 -1/(a e^{y+az})，等价于把 F_y 取成 e^{y+az}，漏掉显式项 a —— 错因判断正确。z_x-z_y=(a+e^{y+az}-1)/(a e^{y+az})。（初稿曾误写 z_y=-1/e^{y+az}，已更正）"
+      "provisional_truth": "F=x+ay+e^{y+az}，F_x=1、F_y=a+e^{y+az}、F_z=a e^{y+az}。故 z_x=-1/(a e^{y+az})，z_y=-(a+e^{y+az})/(a e^{y+az})。学生把 z_y 写成 -1/(a e^{y+az})，等价于把 F_y 取成 e^{y+az}，漏掉显式项 a。z_x-z_y=(a+e^{y+az}-1)/(a e^{y+az})。"
     },
     {
       "id": "m02",
       "subject": "math",
       "mode": "diagnose",
       "difficulty": "中等",
+      "trap": true,
       "question": "求 $\\lim_{x\\to 0}\\frac{e^{x}-1-x}{x^{2}}$。",
       "user_answer": "用洛必达一次得 $\\lim_{x\\to 0}\\frac{e^{x}-1}{2x}$，再洛必达得 $\\lim_{x\\to 0}\\frac{e^{x}}{2}=\\frac{1}{2}$。",
       "expert_ref": null,
-      "provisional_truth": "学生的两次洛必达均正确，结果 1/2 正确。本题正确答案就是“解法正确、无错误”，不应给出任何错因（陷阱题，用于检验模型是否会强行归因）。"
+      "provisional_truth": "学生的两次洛必达均正确，结果 1/2 正确。本题正确答案就是\"解法正确、无错误\"，不应给出任何错因（陷阱题）。"
     },
     {
       "id": "m03",
       "subject": "math",
       "mode": "diagnose",
       "difficulty": "偏难",
+      "trap": false,
       "question": "计算 $\\int_{0}^{1} x\\sqrt{1-x^{2}}\\,dx$。",
       "user_answer": "令 $t=1-x^{2}$，则 $dt=-2x\\,dx$，原式 $=-\\frac{1}{2}\\int_{0}^{1}\\sqrt{t}\\,dt=-\\frac{1}{3}$。",
       "expert_ref": null,
@@ -37,30 +40,297 @@
       "subject": "math",
       "mode": "diagnose",
       "difficulty": "基础",
+      "trap": false,
       "question": "已知 $f(x)=x^{3}-3x$，求其在区间 $[-2,2]$ 上的最大值与最小值。",
       "user_answer": "$f'(x)=3x^{2}-3=0$ 得 $x=\\pm 1$，$f(1)=-2$，$f(-1)=2$，所以最大值 2，最小值 $-2$。",
       "expert_ref": null,
-      "provisional_truth": "区间 [-2,2] 上 f(-2)=-2, f(2)=2, f(1)=-2, f(-1)=2，最值恰好与驻点值重合；方法缺陷是未比较端点，但结论数值正确。"
+      "provisional_truth": "区间 [-2,2] 上 f(-2)=-2, f(2)=2, f(1)=-2, f(-1)=2，最值恰好与驻点值重合；方法缺陷是未比较端点，但结论数值正确。属于\"结论对、方法不完整\"，理想诊断应指出方法缺陷而不否定结论。"
     },
     {
       "id": "m05",
       "subject": "math",
       "mode": "teach",
       "difficulty": "中等",
+      "trap": false,
       "question": "设 $z=z(x,y)$ 由 $x+ay+e^{y+az}=0$ 确定，求 $\\frac{\\partial z}{\\partial x}$ 与 $\\frac{\\partial z}{\\partial y}$，并说明二者之差。",
       "user_answer": null,
       "expert_ref": null,
-      "provisional_truth": "同上：z_x=-1/(a e^{y+az})，z_y=-(a+e^{y+az})/(a e^{y+az})，差值=(a+e^{y+az}-1)/(a e^{y+az})。"
+      "provisional_truth": "z_x=-1/(a e^{y+az})，z_y=-(a+e^{y+az})/(a e^{y+az})，差值=(a+e^{y+az}-1)/(a e^{y+az})。"
     },
     {
       "id": "m06",
       "subject": "math",
       "mode": "teach",
       "difficulty": "偏难",
+      "trap": false,
       "question": "判断级数 $\\sum_{n=1}^{\\infty}\\frac{(-1)^{n}}{\\sqrt{n}}$ 是绝对收敛、条件收敛还是发散，并说明理由。",
       "user_answer": null,
       "expert_ref": null,
       "provisional_truth": "交错级数 1/√n 单调递减趋于 0 ⇒ 收敛；绝对值级数为 p=1/2≤1 的发散 p-级数 ⇒ 条件收敛。"
+    },
+    {
+      "id": "m07",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "求 $y=x^{x}$（$x>0$）的导数。",
+      "user_answer": "由幂函数求导公式 $(x^{n})'=nx^{n-1}$，取 $n=x$ 得 $y'=x\\cdot x^{x-1}=x^{x}$。",
+      "expert_ref": null,
+      "provisional_truth": "正解 $y'=x^{x}(\\ln x+1)$。学生把幂函数法则 $(x^n)'=nx^{n-1}$ 用于底数与指数都含 x 的情形——该法则要求底数为变量、指数为常数。应改写 $y=e^{x\\ln x}$ 后用链式法则。"
+    },
+    {
+      "id": "m08",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "求矩阵 $A=\\begin{pmatrix}1&2\\\\3&4\\end{pmatrix}$ 的逆矩阵。",
+      "user_answer": "$\\det A=1\\times 4-2\\times 3=-2$，故 $A^{-1}=\\frac{1}{-2}\\begin{pmatrix}4&2\\\\3&1\\end{pmatrix}$。",
+      "expert_ref": null,
+      "provisional_truth": "伴随矩阵须把非对角元取相反数：$A^{*}=\\begin{pmatrix}4&-2\\\\-3&1\\end{pmatrix}$，故 $A^{-1}=\\begin{pmatrix}-2&1\\\\1.5&-0.5\\end{pmatrix}$。学生只做了主对角互换，未对非对角元变号。"
+    },
+    {
+      "id": "m09",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "甲、乙两人独立射击同一目标，命中率分别为 $0.6$ 和 $0.5$，求目标至少被命中一次的概率。",
+      "user_answer": "两次射击互不影响，故 $P=0.6+0.5=1.1$。",
+      "expert_ref": null,
+      "provisional_truth": "独立事件是相容事件，加法公式须减去交集：$P(A\\cup B)=0.6+0.5-0.3=0.8$（或 $1-0.4\\times0.5=0.8$）。学生把互斥事件的加法公式用于相容事件，且结果 >1 本身就是信号。"
+    },
+    {
+      "id": "m10",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "求不定积分 $\\int\\frac{dx}{x^{2}+a^{2}}$（$a\\neq 0$）。",
+      "user_answer": null,
+      "expert_ref": null,
+      "provisional_truth": "$\\frac{1}{a}\\arctan\\frac{x}{a}+C$。换元 $x=a\\tan\\theta$，$dx=a\\sec^2\\theta\\,d\\theta$，$x^2+a^2=a^2\\sec^2\\theta$，积分化为 $\\frac{1}{a}\\int d\\theta$。"
+    },
+    {
+      "id": "m11",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "求 $f(x)=x^{3}-3x^{2}+2$ 的极值。",
+      "user_answer": null,
+      "expert_ref": null,
+      "provisional_truth": "$f'=3x(x-2)$，驻点 x=0、x=2。$f''=6x-6$：x=0 处 f''=-6<0 为极大值 f(0)=2；x=2 处 f''=6>0 为极小值 f(2)=-2。"
+    },
+    {
+      "id": "m12",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "求向量组 $\\alpha_1=(1,2,3)^{T},\\ \\alpha_2=(2,4,6)^{T},\\ \\alpha_3=(1,0,1)^{T}$ 的秩。",
+      "user_answer": "向量组有三个向量，故秩为 3。",
+      "expert_ref": null,
+      "provisional_truth": "$\\alpha_2=2\\alpha_1$，故线性相关；$\\alpha_1$ 与 $\\alpha_3$ 对应分量不成比例（1/1 ≠ 2/0），线性无关，故秩为 2。学生把\"向量个数\"当成秩，未做初等行变换检验线性相关性。"
+    },
+    {
+      "id": "p01",
+      "subject": "physics",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "汽车以速度 $v$ 匀速行驶，紧急刹车后以恒定加速度 $a$（$a>0$）减速，求从刹车到停止所经过的距离。",
+      "user_answer": "由 $v=at$ 得 $t=\\frac{v}{a}$，故 $s=vt=v\\cdot\\frac{v}{a}=\\frac{v^{2}}{a}$。",
+      "expert_ref": null,
+      "provisional_truth": "正解 $s=\\frac{v^{2}}{2a}$。刹车是匀减速过程，速度线性下降，平均速度为 $v/2$；学生用匀速位移公式 $s=vt$ 代入，等于把全程都按初速度算，漏掉平均速度因子 $1/2$（等价于漏用 $v^{2}=2as$）。"
+    },
+    {
+      "id": "p02",
+      "subject": "physics",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "质量 $m=50\\ \\mathrm{kg}$ 的人站在电梯内的体重计上，电梯以 $a=2\\ \\mathrm{m/s^{2}}$ 竖直向上加速，取 $g=10\\ \\mathrm{m/s^{2}}$，求体重计的示数（即支持力）。",
+      "user_answer": "人站在体重计上静止不动，处于平衡状态，故支持力等于重力，$N=mg=500\\ \\mathrm{N}$。",
+      "expert_ref": null,
+      "provisional_truth": "人有竖直向上的加速度，不是平衡态。由 $N-mg=ma$ 得 $N=m(g+a)=50\\times12=600\\ \\mathrm{N}$。错因：忽略系统在竖直方向的加速度，用平衡条件 $N=mg$ 处理非惯性系/加速参考系问题。"
+    },
+    {
+      "id": "p03",
+      "subject": "physics",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "两个阻值均为 $6\\ \\Omega$ 的电阻并联后接在 $12\\ \\mathrm{V}$ 的电源两端（内阻不计），求干路电流。",
+      "user_answer": "总电阻 $R=6+6=12\\ \\Omega$，故 $I=\\frac{U}{R}=1\\ \\mathrm{A}$。",
+      "expert_ref": null,
+      "provisional_truth": "正解 4 A。并联总电阻 $\\frac{1}{R}=\\frac{1}{6}+\\frac{1}{6}=\\frac{1}{3}$，即 $R=3\\ \\Omega$。学生把并联电阻按串联相加处理，混淆了 $R=\\sum R_i$（串联）与 $\\frac{1}{R}=\\sum\\frac{1}{R_i}$（并联）。"
+    },
+    {
+      "id": "p04",
+      "subject": "physics",
+      "mode": "teach",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "光滑斜面的倾角为 $30^{\\circ}$，一物体从斜面顶端由静止下滑，求其沿斜面方向的加速度（取 $g=9.8\\ \\mathrm{m/s^{2}}$）。",
+      "user_answer": null,
+      "expert_ref": null,
+      "provisional_truth": "沿斜面方向只受重力分量 $mg\\sin\\theta$，无摩擦，故 $a=g\\sin30^{\\circ}=4.9\\ \\mathrm{m/s^{2}}$。"
+    },
+    {
+      "id": "p05",
+      "subject": "physics",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "波长为 $500\\ \\mathrm{nm}$ 的单色光，求其单个光子的能量（$h=6.63\\times10^{-34}\\ \\mathrm{J\\cdot s}$，$c=3.00\\times10^{8}\\ \\mathrm{m/s}$，保留两位有效数字，并换算为电子伏）。",
+      "user_answer": null,
+      "expert_ref": null,
+      "provisional_truth": "$E=hc/\\lambda=6.63\\times10^{-34}\\times3.00\\times10^{8}/5.00\\times10^{-7}\\approx3.98\\times10^{-19}\\ \\mathrm{J}\\approx2.5\\ \\mathrm{eV}$。"
+    },
+    {
+      "id": "p06",
+      "subject": "physics",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "长直导线通有电流 $I=10\\ \\mathrm{A}$，求距导线 $0.2\\ \\mathrm{m}$ 处的磁感应强度大小（$\\mu_0=4\\pi\\times10^{-7}\\ \\mathrm{T\\cdot m/A}$）。",
+      "user_answer": null,
+      "expert_ref": null,
+      "provisional_truth": "$B=\\frac{\\mu_0 I}{2\\pi r}=\\frac{4\\pi\\times10^{-7}\\times10}{2\\pi\\times0.2}=1.0\\times10^{-5}\\ \\mathrm{T}=10\\ \\mu\\mathrm{T}$。"
+    },
+    {
+      "id": "c01",
+      "subject": "chemistry",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "标准状况下 $11.2\\ \\mathrm{L}$ 的 $\\mathrm{O_2}$，其物质的量与所含分子数分别是多少？",
+      "user_answer": "$n=\\frac{11.2}{22.4}=0.5$，故含 $0.5$ 个 $\\mathrm{O_2}$ 分子。",
+      "expert_ref": null,
+      "provisional_truth": "物质的量 $n=0.5\\ \\mathrm{mol}$ 正确，但分子数应为 $N=nN_A=0.5\\times6.02\\times10^{23}=3.01\\times10^{23}$ 个。错因：把物质的量（单位 mol）直接当作粒子个数，未乘阿伏加德罗常数 $N_A$。"
+    },
+    {
+      "id": "c02",
+      "subject": "chemistry",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": true,
+      "question": "求 $0.01\\ \\mathrm{mol/L}$ 盐酸溶液的 pH（常温）。",
+      "user_answer": "盐酸是强酸，完全电离，$[\\mathrm{H^{+}}]=0.01\\ \\mathrm{mol/L}$，故 $\\mathrm{pH}=-\\lg(0.01)=2$。",
+      "expert_ref": null,
+      "provisional_truth": "完全正确，pH=2，无需补充也不存在错误（强酸浓度远大于 $10^{-7}$，水的电离可忽略是正确近似）。陷阱题：用于检验模型是否会编造\"忽略水的电离\"这类并不构成错误的问题。"
+    },
+    {
+      "id": "c03",
+      "subject": "chemistry",
+      "mode": "teach",
+      "difficulty": "偏难",
+      "trap": false,
+      "question": "配平氧化还原反应：$\\mathrm{KMnO_4}+\\mathrm{HCl}\\rightarrow\\mathrm{KCl}+\\mathrm{MnCl_2}+\\mathrm{Cl_2}\\uparrow+\\mathrm{H_2O}$，并说明配平依据。",
+      "user_answer": null,
+      "expert_ref": null,
+      "provisional_truth": "$2\\mathrm{KMnO_4}+16\\mathrm{HCl}=2\\mathrm{KCl}+2\\mathrm{MnCl_2}+5\\mathrm{Cl_2}\\uparrow+8\\mathrm{H_2O}$。依据电子守恒：Mn 由 +7→+2 得 5e，共 2 个 Mn 得 10e；Cl 由 -1→0 失 1e，生成 5 个 Cl2 失 10e。再按 K、Cl、H、O 原子守恒配平。"
+    },
+    {
+      "id": "c04",
+      "subject": "chemistry",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "求 $0.1\\ \\mathrm{mol/L}$ 醋酸溶液的 pH（$K_a=1.8\\times10^{-5}$，常温，保留一位小数）。",
+      "user_answer": null,
+      "expert_ref": null,
+      "provisional_truth": "弱酸部分电离，$[\\mathrm{H^+}]\\approx\\sqrt{K_a c}=\\sqrt{1.8\\times10^{-6}}\\approx1.34\\times10^{-3}$，$\\mathrm{pH}=-\\lg(1.34\\times10^{-3})\\approx2.9$。"
+    },
+    {
+      "id": "c05",
+      "subject": "chemistry",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": true,
+      "question": "对于反应 $2\\mathrm{H_2}+\\mathrm{O_2}=2\\mathrm{H_2O}$，若 $2\\ \\mathrm{mol}\\ \\mathrm{H_2}$ 与 $1\\ \\mathrm{mol}\\ \\mathrm{O_2}$ 恰好完全反应，请检验质量守恒是否成立。",
+      "user_answer": "$2\\ \\mathrm{mol}\\ \\mathrm{H_2}$ 为 $4\\ \\mathrm{g}$，$1\\ \\mathrm{mol}\\ \\mathrm{O_2}$ 为 $32\\ \\mathrm{g}$，生成 $2\\ \\mathrm{mol}\\ \\mathrm{H_2O}$ 为 $36\\ \\mathrm{g}$，反应前后质量相等，守恒成立。",
+      "expert_ref": null,
+      "provisional_truth": "全部正确：4 g + 32 g = 36 g，且物质的量对应关系与方程式系数一致。陷阱题：用于检验模型是否会编造\"未考虑可逆反应\"\"未考虑副反应\"等并不成立的错因。"
+    },
+    {
+      "id": "e01",
+      "subject": "english",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "选择正确答案：If I ___ you, I would accept the offer.\nA. was　B. were　C. am　D. had been",
+      "user_answer": "选 A。主语是 I，be 动词过去式用 was，所以是 If I was you。",
+      "expert_ref": null,
+      "provisional_truth": "正确答案 B（were）。这是与现在事实相反的虚拟条件句，be 动词一律用 were（If I were you）。学生按陈述语气的\"主谓一致\"规则选 was，忽略虚拟语气的固定形式；同时 D（had been）属于与过去事实相反的虚拟，与主句 would accept 不匹配。"
+    },
+    {
+      "id": "e02",
+      "subject": "english",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "选择正确答案：The number of students in our school ___ increasing.\nA. are　B. is　C. were　D. have been",
+      "user_answer": "选 A。students 是复数，所以谓语用 are。",
+      "expert_ref": null,
+      "provisional_truth": "正确答案 B（is）。主语中心词是 the number（单数），of students 只是修饰它的介词短语；只有 a number of + 复数名词 才接复数谓语。学生按就近名词判定主谓一致，未识别真正的主语中心词。"
+    },
+    {
+      "id": "e03",
+      "subject": "english",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "用括号内动词的适当形式填空，并说明理由：He suggested that she ___(go) there at once.",
+      "user_answer": null,
+      "expert_ref": null,
+      "provisional_truth": "填 (should) go。suggest 表示\"建议\"时，其宾语从句用虚拟语气 should + 动词原形，should 可省略，故用 go（不加 -es、不用 went）。注意：suggest 表示\"暗示/表明\"时不用虚拟语气。"
+    },
+    {
+      "id": "e04",
+      "subject": "english",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": true,
+      "question": "判断下面句子是否有语法错误，若有请改正：She has been working here for five years.",
+      "user_answer": "有错误。现在完成进行时不能与 for five years 这样的时间段连用，应改为 She has worked here for five years.",
+      "expert_ref": null,
+      "provisional_truth": "原句正确，无需修改。现在完成进行时表示动作从过去持续到现在并可能继续，完全可以与 for/since 引导的时间段连用。改写成 has worked 也合语法，但语义侧重不同（强调经历/结果而非持续过程）。本题为陷阱题：学生的\"改错\"本身是误判，理想诊断应指出原句无误，而不是顺着学生去找一个不存在的错误。"
+    },
+    {
+      "id": "e05",
+      "subject": "english",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "选择正确答案：Neither of the answers ___ correct.\nA. are　B. is　C. were　D. be",
+      "user_answer": "选 A。answers 是复数，所以谓语用 are。",
+      "expert_ref": null,
+      "provisional_truth": "正确答案 B（is）。neither of + 复数名词作主语时，谓语在正式书面语中用单数。学生按\"就近的复数名词\"判定主谓一致，未按 neither 的单数语义处理。"
+    },
+    {
+      "id": "y01",
+      "subject": "chinese",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "判断下列句子中加点成语使用是否恰当，并说明理由：这部小说情节跌宕起伏、扣人心弦，读来令人不忍卒读。",
+      "user_answer": "使用恰当。\"不忍卒读\"形容文章写得精彩，让人舍不得读完，正好符合这里\"扣人心弦\"的语境。",
+      "expert_ref": null,
+      "provisional_truth": "使用不恰当。\"不忍卒读\"意为不忍心读完，多形容文章内容悲惨动人、令人不忍续读；形容精彩应改用\"爱不释手\"\"欲罢不能\"。学生望文生义，把\"不忍\"理解为\"舍不得\"，属于典型的成语误用。"
+    },
+    {
+      "id": "y02",
+      "subject": "chinese",
+      "mode": "teach",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "指出下面句子的语病并修改：通过这次社会实践活动，使我明白了团队协作的重要性。",
+      "user_answer": null,
+      "expert_ref": null,
+      "provisional_truth": "语病：成分残缺（缺主语）。\"通过……使……\"两个介词结构连用，把主语淹没在介词短语中。改法一：删\"通过\"——\"这次社会实践活动使我明白了团队协作的重要性\"；改法二：删\"使\"——\"通过这次社会实践活动，我明白了团队协作的重要性\"。"
     }
   ]
 }
