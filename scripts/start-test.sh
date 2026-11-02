@@ -16,6 +16,9 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 
+# 清除代理环境变量，避免干扰本地服务探测
+unset HTTP_PROXY HTTPS_PROXY http_proxy https_proxy no_proxy NO_PROXY 2>/dev/null || true
+
 CHECK_ONLY=0
 [ "${1:-}" = "--check" ] && CHECK_ONLY=1
 
