@@ -2,8 +2,10 @@
  * attributions 数据访问层（ATT-02 / ATT-04 / QAL-01）
  */
 import { getDb } from '../db';
+import { env } from '../config/env';
 import type {
   Attribution,
+  HistoryItem,
   InaccurateReason,
   RateAction,
   ReviewPendingItem,
@@ -43,6 +45,46 @@ export function getAttribution(
   return getDb()
     .prepare('SELECT * FROM attributions WHERE attribution_id = ?')
     .get(attribution_id) as Attribution | undefined;
+}
+
+/**
+ * 按用户列出最近归因（FLW-02）：LEFT JOIN mistakes 取学科/来源/原图引用，
+ * 不依赖内存态，跨会话可查。image_url 由路由层按 src_type/mistake_ref 拼接。
+ */
+export function listAttributionsByUser(
+  anon_user_id: string,
+  limit = 50
+): HistoryItem[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT a.attribution_id, a.loop_id, a.anon_user_id, a.cause, a.knowledge_point,
+              a.essence, a.attr_model_version, a.attr_latency_ms, a.rate_action, a.created_at,
+              m.subject, m.src_type, m.mistake_ref
+       FROM attributions a
+       LEFT JOIN mistakes m ON a.mistake_id = m.mistake_id
+       WHERE a.anon_user_id = ?
+       ORDER BY a.created_at DESC
+       LIMIT ?`
+    )
+    .all(anon_user_id, limit) as Array<HistoryItem & { mistake_ref: string | null }>;
+  return rows.map((r) => ({
+    attribution_id: r.attribution_id,
+    loop_id: r.loop_id,
+    anon_user_id: r.anon_user_id,
+    cause: r.cause,
+    knowledge_point: r.knowledge_point,
+    essence: r.essence,
+    attr_model_version: r.attr_model_version,
+    attr_latency_ms: r.attr_latency_ms,
+    rate_action: r.rate_action,
+    created_at: r.created_at,
+    subject: r.subject,
+    src_type: r.src_type,
+    image_url:
+      r.src_type === 'photo' && r.mistake_ref && !r.mistake_ref.startsWith('hash:')
+        ? `${env.API_BASE_PATH}/uploads/${r.mistake_ref}`
+        : null,
+  }));
 }
 
 export function updateRateAction(

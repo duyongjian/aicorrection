@@ -19,6 +19,7 @@ import type {
   ReviewPendingResponse,
   ReviewWriteRequest,
   ReviewWriteResponse,
+  HistoryItem,
 } from '@aicorrection/shared';
 
 /**
@@ -84,6 +85,17 @@ export const api = {
 
   getAttribution(req: AttributionRequest): Promise<AttributionData> {
     return http.post('/attribution', req).then((r) => r.data.data);
+  },
+
+  /** 归因历史列表（FLW-02）：按用户列出最近归因，含关联原图 URL。 */
+  getHistory(anonUserId: string, limit = 50): Promise<HistoryItem[]> {
+    return http
+      .get(
+        `/attribution/history?anon_user_id=${encodeURIComponent(
+          anonUserId
+        )}&limit=${limit}`
+      )
+      .then((r) => r.data.data);
   },
 
   rate(loopId: string, req: RateRequest): Promise<RateResponse> {

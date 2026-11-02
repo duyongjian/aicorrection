@@ -7,11 +7,12 @@ import RateActions from '../components/RateActions';
 import FollowupPanel from '../components/FollowupPanel';
 import AnalyzingState from '../components/AnalyzingState';
 import OcrFeedback from '../components/OcrFeedback';
+import HistoryList from '../components/HistoryList';
 import { tracker } from '../tracking/sdk';
 
 type Status = 'idle' | 'loading' | 'ok' | 'analyzing' | 'incomplete' | 'error';
 
-/** R02 + R03 归因展示 + 认可 / 追问 */
+/** R02 + R03 归因展示 + 认可 / 追问；无进行中归因时回退展示历史（FLW-02）。 */
 export default function AttributionPage() {
   const navigate = useNavigate();
   const { loop, attribution, runAttribution, rate, followup, resetLoop, error } =
@@ -36,7 +37,7 @@ export default function AttributionPage() {
 
   useEffect(() => {
     if (!loop) {
-      navigate('/');
+      // 无进行中归因：不再把用户弹回上传页，而是展示历史记录（FLW-02）。
       return;
     }
     // T2: screen_view 埋点 — 归因页（screenName='attr_show'，与 followup 同页区分）
@@ -55,7 +56,29 @@ export default function AttributionPage() {
     }
   }, [loop, attribution, runAttribution, navigate]);
 
-  if (!loop) return null;
+  // 无进行中归因：展示往期历史，并引导回到上传。
+  if (!loop) {
+    return (
+      <Box>
+        <Typography variant="h6" sx={{ mb: 2 }}>
+          归因诊断
+        </Typography>
+        <Alert severity="info" sx={{ mb: 2 }}>
+          当前没有进行中的归因。以下是你的历史归因记录；如需新建，请返回上传。
+          <Box sx={{ mt: 1 }}>
+            <Button
+              size="small"
+              variant="outlined"
+              onClick={() => navigate('/')}
+            >
+              去上传
+            </Button>
+          </Box>
+        </Alert>
+        <HistoryList />
+      </Box>
+    );
+  }
 
   return (
     <Box>

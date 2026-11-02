@@ -66,6 +66,31 @@ export interface Attribution {
   created_at: string;
 }
 
+/**
+ * 归因历史列表项（FLW-02）：按用户聚合 attributions + 关联 mistakes 的展示字段。
+ * 前端历史页据此渲染每条往期归因的缩略图、学科、时间与三要素结论。
+ */
+export interface HistoryItem {
+  attribution_id: string;
+  loop_id: string;
+  anon_user_id: string;
+  cause: string | null;
+  knowledge_point: string | null;
+  essence: string | null;
+  attr_model_version: string | null;
+  attr_latency_ms: number | null;
+  /** 用户认可动作：approve / inaccurate / report / null（未评价） */
+  rate_action: RateAction | null;
+  created_at: string;
+  // ── 以下由 mistakes 关联得到 ──
+  subject: string | null;
+  src_type: SrcType | null;
+  /** 图片入口拼接好的可访问原图 URL（文本入口为 null） */
+  image_url: string | null;
+}
+
+export interface HistoryResponse extends ApiResponse<HistoryItem[]> {}
+
 export interface LoopSession {
   loop_id: string;
   anon_user_id: string;

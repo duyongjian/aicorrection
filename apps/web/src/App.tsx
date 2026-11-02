@@ -3,6 +3,7 @@ import { Link, Route, Routes } from 'react-router-dom';
 import UploadPage from './pages/UploadPage';
 import AttributionPage from './pages/AttributionPage';
 import DashboardPage from './pages/DashboardPage';
+import HistoryPage from './pages/HistoryPage';
 
 export default function App() {
   return (
@@ -18,6 +19,9 @@ export default function App() {
           <Button color="inherit" component={Link} to="/attr">
             归因
           </Button>
+          <Button color="inherit" component={Link} to="/history">
+            历史
+          </Button>
           <Button color="inherit" component={Link} to="/dashboard">
             看板
           </Button>
@@ -27,6 +31,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<UploadPage />} />
           <Route path="/attr" element={<AttributionPage />} />
+          <Route path="/history" element={<HistoryPage />} />
           <Route path="/dashboard" element={<DashboardPage />} />
         </Routes>
       </Container>
