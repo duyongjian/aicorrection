@@ -1,0 +1,26 @@
+{
+  "version": "1.0",
+  "note": "对抗样本集：用于验证新锚点能否修复弱模型在'成语望文生义'与'虚拟语气'两类确定性规则上的系统性误判。独立于 29 题真题基线，不污染其统计。",
+  "cases": [
+    {
+      "id": "ry03",
+      "subject": "chinese",
+      "mode": "diagnose",
+      "difficulty": "hard",
+      "trap": true,
+      "question": "判断下列句子中加点成语使用是否恰当，并说明理由：\n这篇文章文不加点，一气呵成，读来酣畅淋漓。",
+      "user_answer": "使用不恰当，\"文不加点\"指文章不加标点、连成一片，这里用错了。",
+      "provisional_truth": "使用恰当。\"文不加点\"中\"点\"是涂改、改动之意，指写文章一气呵成、无需修改，形容文思敏捷、写作流畅，并非\"不加标点符号\"。本题原解/原用法无误，是学生对\"点\"字望文生义，误判为错。正确诊断应为：学生误判——原用法无误。"
+    },
+    {
+      "id": "re05",
+      "subject": "english",
+      "mode": "diagnose",
+      "difficulty": "hard",
+      "trap": false,
+      "question": "选择正确答案：It is high time that we ____ home.\nA. go　B. went　C. will go　D. have gone",
+      "user_answer": "A",
+      "provisional_truth": "应选 B（went）。\"It is high time that + 主语 + 动词过去式\"是虚拟语气固定结构，表示\"早就该做某事了\"，谓语必须用过去式（went），而不是动词原形（go）、将来时或完成时。学生误用原形 go，属于对 high time 虚拟语气的规则缺失。"
+    }
+  ]
+}

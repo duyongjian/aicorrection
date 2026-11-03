@@ -90,3 +90,67 @@ test('解析不被主谓一致锚点文本污染：夹杂规则/易错陷阱仍�
   assert.equal(parsed.hasThree, true, '前置锚点文本不应影响三行解析');
   assert.ok(/is.*而非.*are|are.*is/i.test(parsed.cause ?? ''), '应识别 are→is 的纠正');
 });
+
+// ---------- kp-chengyu-wangwen（成语望文生义陷阱）----------
+
+const CHENGYU_ANCHOR =
+  GOLD_REFERENCES.find((r) => r.id === 'kp-chengyu-wangwen')?.anchor ?? '';
+
+test('ry03 类（文不加点·望文生义陷阱）命中成语锚点', () => {
+  const q =
+    '判断下列句子中加点成语使用是否恰当，并说明理由：\n这篇文章文不加点，一气呵成，读来酣畅淋漓。';
+  const anchors = getKnowledgeReferences(
+    q,
+    '使用不恰当，"文不加点"指文章不加标点，这里用错了。',
+    'chinese'
+  );
+  assert.equal(anchors.length, 1);
+  assert.ok(anchors.includes(CHENGYU_ANCHOR), '应返回 kp-chengyu-wangwen 锚点');
+});
+
+test('数学题（rm02 积分）不命中成语锚点（回归安全）', () => {
+  const q = '求 ∫₀¹ x·e^x dx 的值。';
+  const anchors = getKnowledgeReferences(q, '用分部积分：u=x, dv=e^x dx', 'math');
+  assert.equal(anchors.length, 0, '纯数学题不得误触发成语锚点');
+});
+
+test('解析不被成语锚点文本污染：夹杂原则/正解仍可提取三行', () => {
+  const modelOutput = `【知识锚点】原则：判断成语使用是否恰当必须依据约定俗成义……
+常见望文生义陷阱与正解：文不加点指写文章一气呵成、无需修改
+错因：学生误判：原解/原用法无误
+知识点：文不加点中"点"是涂改、改动之意，指文思敏捷、写作流畅
+本质：学生按字面逐字（望文生义）误读了"点"的含义，原句使用恰当`;
+  const parsed = parseAttrTriple(modelOutput);
+  assert.equal(parsed.hasThree, true, '前置锚点文本不应影响三行解析');
+  assert.ok(/误判|原用法无误/i.test(parsed.cause ?? ''), '应识别为 student 误判');
+});
+
+// ---------- kp-subjunctive-mood（虚拟语气·high time / 与事实相反）----------
+
+const SUBJUNCTIVE_ANCHOR =
+  GOLD_REFERENCES.find((r) => r.id === 'kp-subjunctive-mood')?.anchor ?? '';
+
+test('re05 类（It is high time + 过去式）命中虚拟语气锚点', () => {
+  const q = '选择正确答案：It is high time that we ____ home.\nA. go　B. went　C. will go　D. have gone';
+  const anchors = getKnowledgeReferences(q, 'A', 'english');
+  assert.equal(anchors.length, 1);
+  assert.ok(anchors.includes(SUBJUNCTIVE_ANCHOR), '应返回 kp-subjunctive-mood 锚点');
+});
+
+test('普通主谓一致题（re02 The number of ... is）不命中虚拟语气锚点（防噪声）', () => {
+  const q = '选择正确答案：The number of pages in this book ___ large.\nA. are　B. is';
+  const anchors = getKnowledgeReferences(q, 'B', 'english');
+  assert.equal(anchors.length, 0, '普通 SVA 题不得误触发虚拟语气锚点');
+});
+
+test('解析不被虚拟语气锚点文本污染：夹杂规则/判定方法仍可提取三行', () => {
+  const modelOutput = `【知识锚点】规则：英语虚拟语气由固定结构决定谓语形式……
+"It is high time that + 主语 + 动词过去式"
+错因：误选动词原形 go，未遵循 "It is high time that" 后接过去式表示虚拟语气的固定结构
+知识点："It is high time that + 主语 + 动词过去式"是固定虚拟语气结构
+本质：该结构强制要求过去式以表达"早已该发生"的虚拟含义`;
+  const parsed = parseAttrTriple(modelOutput);
+  assert.equal(parsed.hasThree, true, '前置锚点文本不应影响三行解析');
+  assert.ok(/go.*went|过去式/i.test(parsed.cause ?? ''), '应识别 go→went 的纠正');
+});
+

@@ -21,7 +21,10 @@
     "prompt:ab": "npm run build:shared && tsx apps/api/src/tests/prompt-ab.mjs",
     "blind:export": "tsx apps/api/src/tests/blind-review.mjs export",
     "blind:score": "tsx apps/api/src/tests/blind-review.mjs score",
-    "auto-eval": "tsx apps/api/src/tests/auto-eval.mjs"
+    "auto-eval": "tsx apps/api/src/tests/auto-eval.mjs",
+    "attrib:anchors:test": "tsx --test apps/api/src/services/attribution/references.test.ts",
+    "attrib:regress:real": "tsx scripts/attrib-regress.mjs",
+    "attrib:regress": "npm run attrib:anchors:test"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",
