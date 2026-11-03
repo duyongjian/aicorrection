@@ -57,3 +57,36 @@ test('解析不被前置锚点文本污染：夹杂规则/范本等词仍可提�
   assert.ok((parsed.knowledge_point ?? '').includes('非谓语动词'));
   assert.ok((parsed.essence ?? '').includes('逻辑主语'));
 });
+
+// ---------- kp-subject-verb-agreement（主谓一致·neither/either/each/every of + 复数 → 单数）----------
+
+const SVA_ANCHOR =
+  GOLD_REFERENCES.find((r) => r.id === 'kp-subject-verb-agreement')?.anchor ?? '';
+
+test('re03 类（neither of + 复数）命中主谓一致锚点', () => {
+  const q = '选择正确答案：Neither of the answers ___ correct.\nA. are　B. is　C. were　D. be';
+  const anchors = getKnowledgeReferences(
+    q,
+    '选 A（are）。answers 是复数，所以谓语用 are。',
+    'english'
+  );
+  assert.equal(anchors.length, 1);
+  assert.ok(anchors.includes(SVA_ANCHOR), '应返回 kp-subject-verb-agreement 锚点');
+});
+
+test('数学题（rm01 隐函数求导）不命中主谓一致锚点（回归安全）', () => {
+  const q = '已知函数 y = f(x) 由方程 x^2 + y^2 = 1 隐式定义，求 dy/dx。';
+  const anchors = getKnowledgeReferences(q, "2x + 2y y' = 0", 'math');
+  assert.equal(anchors.length, 0, '纯数学题不得误触发主谓一致锚点');
+});
+
+test('解析不被主谓一致锚点文本污染：夹杂规则/易错陷阱仍可提取三行', () => {
+  const modelOutput = `【知识锚点】规则：以下不定代词作主语时，谓语用单数（is / was / has）……
+易错陷阱：学生常按"of 后就近的复数名词"判定主谓一致
+错因：主语 Neither of the answers 语义为单数，谓语应使用 is，而非 are
+知识点：不定代词 neither/either/each/every 作主语时，谓语用单数
+本质：Neither 是单数代词，主谓一致取决于主语本身而非 of 后的名词`;
+  const parsed = parseAttrTriple(modelOutput);
+  assert.equal(parsed.hasThree, true, '前置锚点文本不应影响三行解析');
+  assert.ok(/is.*而非.*are|are.*is/i.test(parsed.cause ?? ''), '应识别 are→is 的纠正');
+});

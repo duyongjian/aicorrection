@@ -34,6 +34,22 @@ export const GOLD_REFERENCES: KnowledgeReference[] = [
 易错陷阱：当主句已有明确主语时，错误几乎从来不是'悬垂结构/缺少主语/缺少有限动词'（那是分词逻辑主语缺失的情形）。若你的诊断落到'悬垂/缺主语/缺有限动词'，请先复核主谓关系与语态，确认是否其实是主动/被动判断失误。
 范本：'Seen from the top of the hill, the city looks beautiful.' 中 city 是被看的对象（承受者），故用过去分词 Seen，而非 Seeing。`,
   },
+  {
+    id: 'kp-subject-verb-agreement',
+    // 主触发（不限学科，安全：这些英文结构只出现在语法题，绝不出现于数/理/化）；
+    // 中文 cue 作条件项，仅在英文分词语境下才生效，避免误触发。
+    match: [
+      /neither of|either of|each of|every one of|none of/i,
+      /主谓一致|主谓搭配|单复数一致/i,
+    ],
+    anchor: `规则：以下不定代词作主语时，谓语用单数（is / was / has），不受 of 后复数名词影响：
+- neither of + 复数名词 → 单数：Neither of the answers is correct.（不是 are / were）
+- either of + 复数名词 → 单数：Either of the two books is fine.
+- each of + 复数名词 → 单数：Each of the students was present.
+- every one of + 复数名词 → 单数：Every one of them is ready.
+判定方法：先确定真正主语是 neither / either / each / every（语义为单数），谓语必须用单数 is / was。若学生作答用的是 are / were / be（复数或原形），即为错误，应纠正为 is / was；不要因为 of 后跟着复数名词（如 answers / books / students）就认可复数谓语。
+易错陷阱：学生常按"of 后就近的复数名词"判定主谓一致（例如看见 answers 就用 are），这是典型错误；真正主语是 neither / either / each / every（单数语义），谓语必须用单数。`,
+  },
 ];
 
 /** 题目是否处于"英文分词填空"语境：subject==='english'，或题目含英文字母且含下划线空 ___。 */

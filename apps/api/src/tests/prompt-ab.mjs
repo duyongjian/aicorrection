@@ -17,6 +17,7 @@
  *   --limit N           只跑前 N 题
  *   --ids m02,m05       只跑指定题号（盯单个失败案例时用）
  *   --provider mock|real  provider（默认 mock，便于秒级自检管道）
+ *   --anchors             复现生产链路的知识锚点（grounding）注入：按题干/作答命中 references.ts 的 GOLD_REFERENCES 并拼到 system 尾部（默认关闭，保持"仅 Prompt 为变量"）
  *   --timeout ms        单次调用超时（默认 real=300000 / mock=10000）
  *   --tag <name>        报告文件名后缀
  *   --from-json <path>  不调模型，复用已有 JSON 结果重渲染报告（调报告逻辑时用）
@@ -147,7 +148,12 @@ async function main() {
     '../services/attribution/promptVariants.js'
   );
   VARIANTS = PROMPT_VARIANTS;
+  // --anchors：复现生产链路的知识锚点（grounding）注入，仅作验证用。
+  // 生产里 attributionService 把 getKnowledgeReferences 拼到 system 尾部；
+  // 这里开启后对每个 case 同样注入，从而能在 harness 里验证锚点对 re03 类题目的修复。
+  const USE_ANCHORS = Boolean(args.anchors);
   const { parseAttrTriple, parseTeaching } = await import('../services/attribution/prompt.js');
+  const { getKnowledgeReferences } = await import('../services/attribution/references.js');
   const { withTimeout } = await import('../utils/promise.js');
   const { MockProvider } = await import('../services/llm/mockProvider.js');
 
@@ -236,9 +242,20 @@ async function main() {
       const p = resolvePrompt(vid, mode);
       const ansPart =
         mode === 'diagnose' && c.user_answer ? `\n用户作答：${String(c.user_answer).trim()}` : '';
+      // 复现生产：把命中的知识锚点拼到 system 尾部（与生产 attributionService 一致）。
+      const anchorText = USE_ANCHORS
+        ? getKnowledgeReferences(
+            String(c.question),
+            c.user_answer ? String(c.user_answer) : undefined,
+            c.subject
+          ).join('\n\n')
+        : '';
+      const systemContent = anchorText
+        ? `${p.system}\n\n【知识锚点（仅供你参考 grounding，不要原样复述，也不计入最终三行结论）】\n${anchorText}`
+        : p.system;
       const userContent = `题干：\n${String(c.question).trim()}${ansPart}\n${p.tail}`;
       const messages = [
-        { role: 'system', content: p.system },
+        { role: 'system', content: systemContent },
         { role: 'user', content: userContent },
       ];
 
