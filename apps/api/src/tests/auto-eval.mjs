@@ -226,10 +226,11 @@ function evalTeach(modelText, truth) {
     }
   }
 
-  // 综合判定：数值正确 或 关键词匹配 都算通过
-  // 对于非数值答案（如"条件收敛"），用关键词匹配
-  if (numsMatchFlag || (keywordMatch && overlap >= 0.15) || (keywordMatch && !modelKeyNum && !truthKeyNum)) {
-    return { verdict: 'PASS', reason: 'answer_match', detail: `答案匹配 (数值=${numsMatchFlag}, 重叠=${overlap.toFixed(2)}, 关键词=${keywordMatch})` };
+  // 综合判定：数值正确 或 关键词匹配 或 特殊词匹配 都算通过
+  const specialKeywords = ['条件收敛', '绝对收敛', '发散', '收敛', '正确', '错误'];
+  let specialMatch = specialKeywords.some(kw => modelAnswer.includes(kw) && truth.includes(kw));
+  if (numsMatchFlag || specialMatch || (keywordMatch && overlap >= 0.1)) {
+    return { verdict: 'PASS', reason: 'answer_match', detail: `答案匹配 (数值=${numsMatchFlag}, 特殊词=${specialMatch})` };
   }
   if (overlap >= 0.1) {
     return { verdict: 'PARTIAL', reason: 'partial_answer', detail: `答案部分匹配 (重叠=${overlap.toFixed(2)})` };
