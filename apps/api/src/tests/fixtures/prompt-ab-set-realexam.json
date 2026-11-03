@@ -1,0 +1,296 @@
+{
+  "version": "real-exam-v1",
+  "note": "K1.3 真实分布扩样集：题目均为真实考试真题（高考/考研/中考风格数、物、化、英、语），学生作答由编写者按常见错误类型拟定，provisional_truth 为正确解法/错误归因（非专家盲评结论，仅供 auto-eval 方向对照）。trap=true 表示学生作答本身正确（用于检测强行归因）。mode=teach 为无作答、只求讲解。本集用于弥补线上库无可恢复真实学生错题（attributions.question/user_answer 全 NULL）的缺口。",
+  "cases": [
+    {
+      "id": "rm01",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "求极限 $\\lim\\limits_{x\\to 0}\\dfrac{\\tan x-\\sin x}{x^{3}}$。",
+      "user_answer": "因为 $\\tan x\\sim x$、$\\sin x\\sim x$，所以分子 $\\tan x-\\sin x\\sim x-x=0$，故极限为 $0$。",
+      "provisional_truth": "正确极限为 $1/2$。错因：对相减的分子不能直接把各项用等价无穷小替换后再相减，否则会丢项（抵消后精度不够）。应展开到足够阶：$\\tan x=x+\\frac{x^{3}}{3}+o(x^{3})$，$\\sin x=x-\\frac{x^{3}}{6}+o(x^{3})$，相减得 $\\frac{x^{3}}{2}$，除以 $x^{3}$ 为 $1/2$。学生把 $\\tan x$、$\\sin x$ 都代成 $x$ 导致分子抵消得 $0$，属于等价无穷小替换的阶数错误。"
+    },
+    {
+      "id": "rm02",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "求不定积分 $\\int x e^{x}\\,dx$。",
+      "user_answer": "$\\int x e^{x}\\,dx=\\left(\\int x\\,dx\\right)\\left(\\int e^{x}\\,dx\\right)=\\dfrac{x^{2}}{2}e^{x}+C$。",
+      "provisional_truth": "正确结果为 $(x-1)e^{x}+C$。错因：乘积的积分不能拆成积分的乘积，必须用分部积分法（取 $u=x,\\ dv=e^{x}dx$）。学生把 $\\int x\\cdot e^{x}$ 当成 $\\int x\\cdot\\int e^{x}$ 是错误的运算律误用。"
+    },
+    {
+      "id": "rm03",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "解方程 $2^{x}=x+1$。",
+      "user_answer": "显然 $x=1$ 是解，所以方程的解为 $x=1$。",
+      "provisional_truth": "方程有两个解 $x=0$ 与 $x=1$。错因：指函数与一次函数的图像可能有两个交点，学生只验出一个解就下结论，漏掉了 $x=0$（代回 $2^{0}=1=0+1$ 成立）。解这类方程须结合图像或代回检验，不能只凭观察取一个解。"
+    },
+    {
+      "id": "rm04",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "已知数列 $\\{a_n\\}$ 满足 $a_1=1$，$a_{n+1}=2a_n+1$，求 $a_n$。",
+      "user_answer": "由递推式直接得 $a_n=2^{n}$。",
+      "provisional_truth": "正确通项 $a_n=2^{n}-1$。错因：递推 $a_{n+1}=2a_n+1$ 是线性非齐次，须构造等比数列 $\\{a_n+1\\}$（有 $a_{n+1}+1=2(a_n+1)$），从而 $a_n+1=2^{n}$，即 $a_n=2^{n}-1$。学生漏掉常数项直接写 $2^{n}$，属于递推式常数项处理错误。"
+    },
+    {
+      "id": "rm05",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "已知向量 $\\vec a=(1,2)$，$\\vec b=(2,4)$，求 $\\vec a\\cdot\\vec b$ 以及两向量夹角。",
+      "user_answer": "$\\vec a\\cdot\\vec b=1\\times2+2\\times4=0$？不对，算出来点积为 $0$，所以两向量垂直，夹角为 $90^{\\circ}$。",
+      "provisional_truth": "正确点积 $\\vec a\\cdot\\vec b=1\\times2+2\\times4=10$；且 $\\vec b=2\\vec a$ 两向量平行同向，夹角 $0^{\\circ}$。错因：点积计算错误（误算为 $0$），进而错误判定为垂直。实际 $\\vec b$ 是 $\\vec a$ 的数倍，应判为平行而非垂直。"
+    },
+    {
+      "id": "rm06",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "在 $\\triangle ABC$ 中，已知 $a=2$，$b=2\\sqrt{3}$，$B=60^{\\circ}$，求角 $A$。",
+      "user_answer": "由正弦定理 $\\dfrac{\\sin A}{a}=\\dfrac{\\sin B}{b}$ 得 $\\sin A=\\dfrac{a\\sin B}{b}=\\dfrac{1}{2}$，所以 $A=30^{\\circ}$ 或 $A=150^{\\circ}$。",
+      "provisional_truth": "正确答案只有 $A=30^{\\circ}$。错因：由 $\\sin A=1/2$ 确实有两解，但须结合几何条件取舍：已知 $b>a$ 即 $B>A$，且 $A+B<180^{\\circ}$，故 $A=150^{\\circ}$ 与 $B=60^{\\circ}$ 之和已超过 $180^{\\circ}$，必须舍去。学生给出两解未排除不合法解，属于正弦定理多解未检验。"
+    },
+    {
+      "id": "rm07",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "从甲、乙、丙、丁、戊 5 人中任选 3 人组成小组，求甲被选中的概率。",
+      "user_answer": "甲是 5 人中的 1 人，所以甲被选中的概率是 $\\dfrac{1}{5}$。",
+      "provisional_truth": "正确概率为 $C(4,2)/C(5,3)=6/10=3/5$。错因：把“单人占比”当成“被选中的概率”。正确做法是甲被选中等价于其余 2 人从另外 4 人中选，即 $C(4,2)$ 种，除以总数 $C(5,3)$。学生用 $1/5$ 属于对古典概型样本空间理解错误。"
+    },
+    {
+      "id": "rm08",
+      "subject": "math",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "已知 $(1+i)z=2$，求复数 $z$。",
+      "user_answer": "$z=\\dfrac{2}{1+i}=\\dfrac{2(1+i)}{(1+i)(1+i)}=1+i$。",
+      "provisional_truth": "正确结果 $z=1-i$。错因：分母有理化须乘共轭 $(1-i)$ 而非 $(1+i)$；正确为 $z=\\dfrac{2(1-i)}{(1+i)(1-i)}=1-i$。学生误乘 $(1+i)$ 使分母变成 $2i$ 且符号错误，属于复数除法共轭使用错误。"
+    },
+    {
+      "id": "rp01",
+      "subject": "physics",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "质量为 $m$ 的物体从高度 $h$ 处自由下落，不计空气阻力，求落地时的速度大小 $v$。",
+      "user_answer": "由 $v=gt$ 可得 $v=gh$。",
+      "provisional_truth": "正确为 $v=\\sqrt{2gh}$（由 $v^{2}=2gh$ 或先求 $t=\\sqrt{2h/g}$ 再代入 $v=gt$）。错因：把 $v=gt$ 中的 $t$ 直接换成 $h$ 得到 $v=gh$，物理量纲与量纲分析都不成立。应从机械能守恒 $mgh=\\frac{1}{2}mv^{2}$ 或 $v=gt,\\ h=\\frac{1}{2}gt^{2}$ 联立得到 $\\sqrt{2gh}$。"
+    },
+    {
+      "id": "rp02",
+      "subject": "physics",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "质点做半径为 $r$、速率为 $v$ 的匀速圆周运动，求其向心加速度大小。",
+      "user_answer": "向心加速度 $a=\\dfrac{v}{r}$。",
+      "provisional_truth": "正确为 $a=v^{2}/r$。错因：把向心加速度公式写成 $v/r$，漏掉了速率的平方。正确推导由 $a=v\\omega$、$v=r\\omega$ 得 $a=v^{2}/r$。"
+    },
+    {
+      "id": "rp03",
+      "subject": "physics",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "倾角为 $\\theta$ 的光滑斜面上，质量为 $m$ 的物体由静止下滑，求其沿斜面方向的加速度。",
+      "user_answer": "物体受重力 $mg$，所以加速度 $a=g$。",
+      "provisional_truth": "正确为 $a=g\\sin\\theta$。错因：把重力整体当成沿斜面的合力，忽略重力需沿斜面分解；沿斜面方向只有分力 $mg\\sin\\theta$，故 $a=g\\sin\\theta$（垂直分量被支持力平衡）。"
+    },
+    {
+      "id": "rp04",
+      "subject": "physics",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "三个阻值均为 $10\\ \\Omega$ 的电阻并联后接在电源两端，求等效电阻。",
+      "user_answer": "等效电阻 $R=10+10+10=30\\ \\Omega$。",
+      "provisional_truth": "正确为 $R=10/3\\ \\Omega\\approx3.33\\ \\Omega$。错因：把并联电阻按串联相加，混淆了 $R=\\sum R_i$（串联）与 $1/R=\\sum 1/R_i$（并联）。三个相同电阻并联时 $R=R_0/n=10/3$。"
+    },
+    {
+      "id": "rp05",
+      "subject": "physics",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "质量为 $m$ 的质点以速率 $v$、半径 $r$ 做匀速圆周运动，求所需向心力大小。",
+      "user_answer": "向心力 $F=m\\dfrac{v}{r}$。",
+      "provisional_truth": "正确为 $F=mv^{2}/r$。错因：向心力公式漏掉速率平方，写成 $mv/r$；由 $F=ma$ 与 $a=v^{2}/r$ 应为 $mv^{2}/r$。"
+    },
+    {
+      "id": "rp06",
+      "subject": "physics",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "一定质量的理想气体在恒温下被压缩，体积减小，判断其压强如何变化。",
+      "user_answer": "温度不变，所以压强也不变。",
+      "provisional_truth": "正确为压强增大。错因：忽略玻意耳定律 $pV=C$（恒温下 $p$ 与 $V$ 成反比）；体积减小时压强必增大。学生误以为“温度不变则压强不变”，属于对气体实验定律理解错误。"
+    },
+    {
+      "id": "rc01",
+      "subject": "chemistry",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "标准状况下 $5.6\\ \\mathrm{L}$ 的 $\\mathrm{NH_3}$ 所含分子数是多少？",
+      "user_answer": "标准状况下 $5.6\\ \\mathrm{L}$ 对应 $0.5\\ \\mathrm{mol}$，所以分子数为 $0.5N_A$。",
+      "provisional_truth": "正确物质的量为 $n=5.6/22.4=0.25\\ \\mathrm{mol}$，分子数 $0.25N_A$。错因：把 $5.6\\ \\mathrm{L}$ 误当成 $11.2\\ \\mathrm{L}$ 对应 $0.5\\ \\mathrm{mol}$；标准状况下 $22.4\\ \\mathrm{L/mol}$，须用实际体积 $5.6\\ \\mathrm{L}$ 计算。"
+    },
+    {
+      "id": "rc02",
+      "subject": "chemistry",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "将 $100\\ \\mathrm{mL}\\ 0.1\\ \\mathrm{mol/L}$ 的 $\\mathrm{HCl}$ 与 $100\\ \\mathrm{mL}\\ 0.1\\ \\mathrm{mol/L}$ 的 $\\mathrm{NaOH}$ 混合，求混合后溶液的 $\\mathrm{pH}$。",
+      "user_answer": "盐酸过量，所以混合后溶液呈酸性，$\\mathrm{pH}<7$。",
+      "provisional_truth": "正确为 $\\mathrm{pH}=7$（恰好中和）。错因：未做物质的量计算就判定盐酸过量；实际两者等体积等浓度，$\\mathrm{HCl}$ 与 $\\mathrm{NaOH}$ 物质的量相等（$0.01\\ \\mathrm{mol}$ 各），强酸强碱恰好中和生成中性盐，pH=7。"
+    },
+    {
+      "id": "rc03",
+      "subject": "chemistry",
+      "mode": "diagnose",
+      "difficulty": "偏难",
+      "trap": false,
+      "question": "配平氧化还原反应：$\\mathrm{Cu}+\\mathrm{HNO_3}(\\text{稀})\\rightarrow\\mathrm{Cu(NO_3)_2}+\\mathrm{NO}+\\mathrm{H_2O}$。",
+      "user_answer": "配平为 $\\mathrm{Cu}+4\\mathrm{HNO_3}=\\mathrm{Cu(NO_3)_2}+2\\mathrm{NO_2}+2\\mathrm{H_2O}$（按二氧化氮配）。",
+      "provisional_truth": "正确（稀硝酸）配平为 $3\\mathrm{Cu}+8\\mathrm{HNO_3}=3\\mathrm{Cu(NO_3)_2}+2\\mathrm{NO}+4\\mathrm{H_2O}$。错因：题干明确是稀硝酸，还原产物应是 $\\mathrm{NO}$ 而非 $\\mathrm{NO_2}$；且未用电子守恒配平（Cu 由 0→+2 失 2e，N 由 +5→+2 得 3e，最小公倍数 6 → 3Cu、2NO）。学生既用错还原产物又缺电子守恒。"
+    },
+    {
+      "id": "rc04",
+      "subject": "chemistry",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "乙醇（$\\mathrm{C_2H_5OH}$，摩尔质量 $46\\ \\mathrm{g/mol}$）完全燃烧：$2.3\\ \\mathrm{g}$ 乙醇需要多少摩尔 $\\mathrm{O_2}$？",
+      "user_answer": "乙醇摩尔质量当作 $46$，但方程式写成 $\\mathrm{C_2H_5OH}+\\mathrm{O_2}\\rightarrow 2\\mathrm{CO_2}+3\\mathrm{H_2O}$，所以 $2.3\\ \\mathrm{g}$ 即 $0.05\\ \\mathrm{mol}$ 乙醇需 $0.05\\ \\mathrm{mol}\\ \\mathrm{O_2}$。",
+      "provisional_truth": "正确为 $0.15\\ \\mathrm{mol}$。错因：燃烧方程式配平错误，正确为 $\\mathrm{C_2H_5OH}+3\\mathrm{O_2}\\rightarrow 2\\mathrm{CO_2}+3\\mathrm{H_2O}$，乙醇前系数 1 对应 $\\mathrm{O_2}$ 系数 3；$n(乙醇)=2.3/46=0.05\\ \\mathrm{mol}$，故需 $\\mathrm{O_2}=0.15\\ \\mathrm{mol}$。学生把 $\\mathrm{O_2}$ 系数写成 1，属于化学方程式未配平。"
+    },
+    {
+      "id": "rc05",
+      "subject": "chemistry",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "恒温恒容下，反应 $\\mathrm{N_2}+3\\mathrm{H_2}\\rightleftharpoons 2\\mathrm{NH_3}$ 已达平衡，若再充入一定量 $\\mathrm{N_2}$，平衡向哪个方向移动？",
+      "user_answer": "充入反应物后体系压强增大，平衡应向气体分子数减小的方向（正向）移动，但充入的是反应物本身，所以平衡不移动。",
+      "provisional_truth": "正确为平衡正向移动。错因：自相矛盾——既然承认“增加反应物浓度”，按勒夏特列原理平衡必正向移动，又错误地说“平衡不移动”。充入 $\\mathrm{N_2}$ 提高反应物浓度，平衡正向（向右）移动以消耗部分新增的 $\\mathrm{N_2}$。"
+    },
+    {
+      "id": "re01",
+      "subject": "english",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "选择正确答案：If I ___ you, I would take the job.\nA. was　B. were　C. am　D. been",
+      "user_answer": "选 A（was）。主语是 I，be 动词过去式用 was。",
+      "provisional_truth": "正确答案 B（were）。这是与现在事实相反的虚拟条件句，be 动词一律用 were（If I were you）。学生按陈述语气的“主谓一致”规则选 was，忽略虚拟语气的固定形式。"
+    },
+    {
+      "id": "re02",
+      "subject": "english",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "选择正确答案：The number of pages in this book ___ large.\nA. are　B. is　C. were　D. have been",
+      "user_answer": "选 A（are）。pages 是复数，所以谓语用 are。",
+      "provisional_truth": "正确答案 B（is）。主语中心词是 the number（单数），of pages 只是修饰的介词短语；只有 a number of + 复数名词 才接复数谓语。学生按就近名词 pages 判定主谓一致，未识别真正的主语中心词 number。"
+    },
+    {
+      "id": "re03",
+      "subject": "english",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "选择正确答案：Neither of the answers ___ correct.\nA. are　B. is　C. were　D. be",
+      "user_answer": "选 A（are）。answers 是复数，所以谓语用 are。",
+      "provisional_truth": "正确答案 B（is）。neither of + 复数名词作主语时，谓语在正式书面语中用单数。学生按“就近的复数名词 answers”判定主谓一致，未按 neither 的单数语义处理。"
+    },
+    {
+      "id": "re04",
+      "subject": "english",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "选择正确答案：By the time we arrived, the train ___.\nA. left　B. had left　C. leaves　D. has left",
+      "user_answer": "选 A（left）。arrived 是过去时，所以火车离开也用过去时 left。",
+      "provisional_truth": "正确答案 B（had left）。by the time + 过去时从句，主句动作须用过去完成时 had left 表示“在我们到达之前已经发生”。学生误用一般过去时 left，未体现“先于到达发生”的时态层级。"
+    },
+    {
+      "id": "ry01",
+      "subject": "chinese",
+      "mode": "diagnose",
+      "difficulty": "中等",
+      "trap": true,
+      "question": "判断下列句子中加点成语使用是否恰当，并说明理由：这篇论文观点新颖、论证严密，堪称不刊之论。",
+      "user_answer": "使用不恰当。“不刊之论”指不能刊登的言论，这篇论文明明可以刊登，所以成语用错了。",
+      "provisional_truth": "使用恰当。学生误判。\"不刊之论\"中\"刊\"意为\"削删、修订\"，指不可更改的正确言论（褒义），而非\"不能刊登\"。学生望文生义，把\"刊\"理解为\"刊登\"，属于典型的成语误用型误判。本题为陷阱题：学生\"找错\"本身是误判，理想诊断应指出原句无误，而不是顺着学生去找一个不存在的错误。"
+    },
+    {
+      "id": "ry02",
+      "subject": "chinese",
+      "mode": "diagnose",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "指出下面句子的语病并修改：由于她这样好的成绩，得到了老师和同学们的赞扬。",
+      "user_answer": "没有语病，这句话表达清楚。",
+      "provisional_truth": "语病：成分残缺（缺主语）。\"由于……\"是介词结构作状语，把主语淹没了。改法一：删\"由于\"——\"她这样好的成绩，得到了……\"；改法二：在\"得到了\"前加主语\"她\"。学生未识别介词淹没主语的残缺句。"
+    },
+    {
+      "id": "tm01",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "求定积分 $\\int_{0}^{\\pi}\\sin x\\,dx$。",
+      "user_answer": null,
+      "provisional_truth": "$\\int_{0}^{\\pi}\\sin x\\,dx=[-\\cos x]_{0}^{\\pi}=-\\cos\\pi+\\cos0=-(-1)+1=2$。"
+    },
+    {
+      "id": "tm02",
+      "subject": "physics",
+      "mode": "teach",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "物体从静止开始做自由落体运动，取 $g=10\\ \\mathrm{m/s^{2}}$，求下落 $2\\ \\mathrm{s}$ 内的位移。",
+      "user_answer": null,
+      "provisional_truth": "$h=\\frac{1}{2}gt^{2}=\\frac{1}{2}\\times10\\times2^{2}=20\\ \\mathrm{m}$。"
+    },
+    {
+      "id": "tm03",
+      "subject": "chemistry",
+      "mode": "teach",
+      "difficulty": "基础",
+      "trap": false,
+      "question": "标准状况下 $22.4\\ \\mathrm{L}$ 的 $\\mathrm{O_2}$，其物质的量与所含分子数分别是多少？",
+      "user_answer": null,
+      "provisional_truth": "物质的量 $n=22.4/22.4=1\\ \\mathrm{mol}$；分子数 $N=nN_A=6.02\\times10^{23}$ 个。"
+    },
+    {
+      "id": "tm04",
+      "subject": "english",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "讲解虚拟语气中与现在事实相反的条件句结构（以 If I were you 为例）。",
+      "user_answer": null,
+      "provisional_truth": "与现在事实相反：if 从句用过去时（be 动词一律 were），主句用 would/should/could + 动词原形。如 If I were you, I would accept it."
+    }
+  ]
+}

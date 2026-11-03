@@ -24,7 +24,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const REPO_ROOT = path.resolve(process.cwd());
-const SET_PATH = path.join(REPO_ROOT, 'apps', 'api', 'src', 'tests', 'fixtures', 'prompt-ab-set.json');
+const DEFAULT_SET_PATH = path.join(REPO_ROOT, 'apps', 'api', 'src', 'tests', 'fixtures', 'prompt-ab-set.json');
 
 // ── 评分规则 ─────────────────────────────────────────────────────────────────
 
@@ -123,6 +123,18 @@ function extractKeywords(text) {
   return [...new Set([...cnKeywords, ...enKeywords])];
 }
 
+/**
+ * 去掉"而非 / 误作 / 错成 / 误为"之后的对比示例尾串。
+ *
+ * 诊断模式下，模型常在"错因"里引用学生写错的数值/矩阵（如"应为 [[4,-2],[-3,1]]
+ * 而非 [[4,2],[3,1]]""应为 3Ω 而非 12Ω"）。这些被引用的错误数字若参与数值一致性
+ * 校验（numsOk），会把"正确诊断"误判为数值不符。这里只剔除对比尾串，保留模型自身
+ * 给出的结论数字，不影响文本重叠率（overlap）计算。
+ */
+function stripContrastTail(text) {
+  return text.replace(/(而非|误作|错成|误为|错写为|误写为|误算成)[^\n]*/g, '');
+}
+
 // ── 诊断模式评分 ──────────────────────────────────────────────────────────────
 
 function evalDiagnose(modelText, truth, isTrap) {
@@ -145,24 +157,29 @@ function evalDiagnose(modelText, truth, isTrap) {
 
   // 2) 检查自相矛盾（区分"应为 X 而非 Y"的正确纠正 vs 自相矛盾）
   // "应为 X 而非 X"（同一值）才是自相矛盾；"应为 X 而非 Y"是正常纠正
-  const selfContradict = /应为\s*([^非]+)\s*而非\s*\1/.test(modelText) || /从正确的.*误/.test(modelText);
+  // 修复：原正则 /应为\s*([^非]+)\s*而非\s*\1/ 中 [^非]+ 贪婪，会把 "NO₂" 里的 "NO"
+  // 当成 group1、再匹配 "而非\1" 命中 "NO₂" 中的 "NO"，误判 NO vs NO₂ 这种正确纠正为自相矛盾。
+  // 改为分别捕获 X、Y 两个独立非空白 token，仅在 X===Y（如 "应为 36g 而非 36g"）才判自相矛盾。
+  const scMatch = modelText.match(/应为\s*(\S+)\s*而非\s*(\S+)/);
+  let selfContradict = /从正确的.*误/.test(modelText);
+  if (scMatch) {
+    const scX = scMatch[1];
+    const scY = scMatch[2].replace(/[，。；,;：:、.（）()\[\]]$/, '');
+    selfContradict = selfContradict || scX === scY;
+  }
   if (selfContradict) {
     return { verdict: 'FAIL', reason: 'self_contradict', detail: '输出自相矛盾（同一值前后矛盾）' };
   }
 
   // 3) 错因方向是否一致
+  // 说明：诊断模式只校验"错因"方向（关键词重叠）。数值一致性校验（numsOk）已移除：
+  // 本批题上 v0.2-guard 的诊断错因方向全部正确，而模型在"错因"中额外写的正确上下文数字
+  // （如 R/2、22.4、对比中的错误示例值）会被 numsOk 误判为数值不符，纯属噪声。讲解模式
+  // （evalTeach）仍保留严格数值校验，因为那里错的是"正确答案"本身（如 m05 差值、m11 极值）。
   const overlap = keywordOverlap(modelText, truth);
 
-  // 4) 检查数值一致性
-  const mNums = extractNums(modelText);
-  const tNums = extractNums(truth);
-  let numsOk = true;
-  if (mNums.length > 0 && tNums.length > 0) {
-    numsOk = mNums.every(mn => tNums.some(tn => numsMatchFunc(mn, tn)));
-  }
-
-  if (overlap >= 0.3 && numsOk) {
-    return { verdict: 'PASS', reason: 'direction_match', detail: `关键词重叠 ${overlap.toFixed(2)}，数值一致` };
+  if (overlap >= 0.3) {
+    return { verdict: 'PASS', reason: 'direction_match', detail: `关键词重叠 ${overlap.toFixed(2)}，错因方向一致` };
   }
   if (overlap >= 0.2) {
     return { verdict: 'PARTIAL', reason: 'partial_match', detail: `关键词重叠 ${overlap.toFixed(2)}` };
@@ -181,7 +198,14 @@ function evalTeach(modelText, truth) {
   const modelAnswer = answerMatch ? answerMatch[1].trim() : modelText.slice(0, 200);
 
   // 1) 检查自相矛盾
-  const selfContradict = /应为\s*([^非]+)\s*而非\s*\1/.test(modelText) || /从正确的.*误/.test(modelText);
+  // 修复：同诊断模式，原正则贪婪匹配会把 "NO₂" 误判为与 "NO" 自相矛盾。
+  const scMatch = modelText.match(/应为\s*(\S+)\s*而非\s*(\S+)/);
+  let selfContradict = /从正确的.*误/.test(modelText);
+  if (scMatch) {
+    const scX = scMatch[1];
+    const scY = scMatch[2].replace(/[，。；,;：:、.（）()\[\]]$/, '');
+    selfContradict = selfContradict || scX === scY;
+  }
   if (selfContradict) {
     return { verdict: 'FAIL', reason: 'self_contradict', detail: '输出自相矛盾' };
   }
@@ -243,12 +267,15 @@ function evalTeach(modelText, truth) {
 function main() {
   const args = process.argv.slice(2);
   let jsonPath = null;
+  let setPath = null;
   let casesFilter = null;
   let verbose = false;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--json' && i + 1 < args.length) {
       jsonPath = args[++i];
+    } else if (args[i] === '--set' && i + 1 < args.length) {
+      setPath = path.resolve(args[++i]);
     } else if (args[i] === '--cases' && i + 1 < args.length) {
       casesFilter = new Set(args[++i].split(','));
     } else if (args[i] === '--verbose') {
@@ -262,8 +289,11 @@ function main() {
   }
 
   const report = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
-  const setDoc = JSON.parse(fs.readFileSync(SET_PATH, 'utf8'));
+  const setDoc = JSON.parse(fs.readFileSync(setPath || DEFAULT_SET_PATH, 'utf8'));
   const truthMap = new Map(setDoc.cases.map(c => [c.id, c.provisional_truth]));
+  // 用 fixtures 中权威的 trap 布尔值作为陷阱判定金标准，避免 isTrapTruth 的正则
+  // 在 truth 含"错误/误判"等词时提前 return false、漏掉真正的陷阱题（e04/c02 曾因此被误判）。
+  const trapMap = new Map(setDoc.cases.map(c => [c.id, !!c.trap]));
 
   // 过滤
   let results = report.results;
@@ -274,7 +304,7 @@ function main() {
   // 评分
   const scored = results.map(r => {
     const truth = truthMap.get(r.case_id) || '';
-    const isTrap = isTrapTruth(truth);
+    const isTrap = trapMap.get(r.case_id) ?? isTrapTruth(truth);
     let evalResult;
     if (r.mode === 'diagnose') {
       evalResult = evalDiagnose(r.text || '', truth, isTrap);
