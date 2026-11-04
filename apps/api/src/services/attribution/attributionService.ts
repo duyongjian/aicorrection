@@ -133,8 +133,11 @@ export async function generateAttribution(
     if (!env.AUTO_FALLBACK_TO_MOCK || provider.name === 'mock') return false;
     const mock = new MockProvider();
     const r = await mock.chat(messages, { maxTokens: 800 });
-    const mp = parseAttrTriple(r.text);
-    if (!mp.hasThree) return false;
+    // 按模式校验：诊断模式查三行齐全；讲解模式查核心三段（正确答案/正确推导/常见陷阱）齐全。
+    const valid = hasAnswer
+      ? parseAttrTriple(r.text).hasThree
+      : parseTeaching(r.text).hasCore;
+    if (!valid) return false;
     text = r.text;
     latencyMs = r.latencyMs;
     modelVersion = `${MOCK_ATTR_MODEL_VERSION}-fallback`;

@@ -51,6 +51,16 @@ export class MockProvider implements LlmProvider {
         latencyMs: 20,
       };
     }
+    // 讲解模式（无作答）：system 含"未提供自己的作答"哨兵（ATTR_SYSTEM_NOANSWER）。
+    // 该模式下必须产出 正确答案/正确推导/常见陷阱/知识点/本质 五段，否则 parseTeaching 取不到 hasCore。
+    const isTeach = system.includes('未提供自己的作答') || system.includes('规范讲解');
+    if (isTeach) {
+      return {
+        text: this.mockTeaching(user),
+        model: MOCK_ATTR_MODEL_VERSION,
+        latencyMs: 30,
+      };
+    }
     return {
       text: this.mockAttribution(user),
       model: MOCK_ATTR_MODEL_VERSION,
@@ -77,6 +87,83 @@ export class MockProvider implements LlmProvider {
     const cause = this.cause(subject, question);
     const essence = this.essence(subject, question);
     return `错因：${cause}\n知识点：${kp}\n本质：${essence}`;
+  }
+
+  /**
+   * 讲解模式（无作答）兜底输出：产出 正确答案 / 正确推导 / 常见陷阱 / 知识点 / 本质 五段，
+   * 与 ATTR_SYSTEM_NOANSWER 契约对齐，确保 parseTeaching 取到 hasCore（否则讲解模式无解）。
+   * 数学导数类给出与 smoke 示例一致的具体结论；其余学科给出结构化讲解框架。
+   */
+  private mockTeaching(question: string): string {
+    const subject = detectSubject(question);
+    const kp = this.knowledgePoint(subject, question);
+    const essence = this.essence(subject, question);
+    const correct = this.teachCorrectAnswer(subject, question);
+    const derivation = this.teachDerivation(subject, question);
+    const pitfall = this.teachPitfall(subject, question);
+    return `正确答案：${correct}\n正确推导：\n${derivation}\n常见陷阱：${pitfall}\n知识点：${kp}\n本质：${essence}`;
+  }
+
+  private teachCorrectAnswer(subject: Subject, q: string): string {
+    switch (subject) {
+      case 'math':
+        if (/导数|单调|极值/.test(q)) {
+          return '$f\'(x)=3x^2-3=3(x-1)(x+1)$，驻点 $x=\\pm1$；在 $[-2,2]$ 上于 $(-\\infty,-1]$、$[1,+\\infty)$ 单调递增，于 $[-1,1]$ 单调递减，极大值 $f(-1)=2$、极小值 $f(1)=-2$。';
+        }
+        if (/积分/.test(q)) return '按定积分定义与换元法逐步计算，注意积分上下限随换元同步变换后求值。';
+        if (/数列/.test(q)) return '先求通项或前 $n$ 项和的闭式，再据闭式判断收敛性或求和。';
+        return '按该题型的规范步骤求解，给出在给定条件下的结论。';
+      case 'english':
+        return '结合语境还原作者真实逻辑，选择/写出符合语法与语义的答案。';
+      case 'politics':
+        return '用矛盾分析法穿透现象，给出符合原理的结论。';
+      case 'logic':
+        return '先锁定论证结构，再判断削弱/加强的作用点。';
+      default:
+        return '在给定条件下，按题干约束给出正确结论。';
+    }
+  }
+
+  private teachDerivation(subject: Subject, q: string): string {
+    switch (subject) {
+      case 'math':
+        if (/导数|单调|极值/.test(q)) {
+          return (
+            '$$f\'(x)=3x^2-3=3(x-1)(x+1)$$\n' +
+            '$$f\'(x)>0 \\Rightarrow x<-1 \\text{ 或 } x>1;\\quad f\'(x)<0 \\Rightarrow -1<x<1$$\n' +
+            '$$f(-1)=2,\\ f(1)=-2,\\ f(\\pm2)=\\pm2$$'
+          );
+        }
+        if (/积分/.test(q)) return '$$\\int_a^b f(x)\\,dx = F(b)-F(a)$$\n$$令\\,u=g(x)\\,换元，上下限同步:\\,\\int_{g(a)}^{g(b)}\\cdots\\,du$$';
+        if (/数列/.test(q)) return '$$a_n = \\cdots \\quad (n\\ge 1)$$\n$$S_n = \\sum_{k=1}^n a_k = \\cdots$$';
+        return '$$依题干条件逐步推导$$\n$$化简得到结论$$';
+      case 'english':
+        return '$$锁定主谓宾与修饰关系$$\n$$依据时态/从句规则还原语义$$';
+      case 'politics':
+        return '$$定位矛盾双方$$\n$$用对立统一规律分析本质$$';
+      case 'logic':
+        return '$$拆解前提与结论$$\n$$定位论证结构后再判断$$';
+      default:
+        return '$$按题干条件逐步推导$$\n$$得出在给定条件下的结论$$';
+    }
+  }
+
+  private teachPitfall(subject: Subject, q: string): string {
+    switch (subject) {
+      case 'math':
+        if (/导数|单调|极值/.test(q)) {
+          return '漏掉端点 $x=\\pm2$ 的函数值比较而错判全局最值；把驻点直接当极值点却未验证导数符号变化；因式分解或代入计算符号出错。';
+        }
+        return '混淆公式适用前提；计算符号/步骤出错；忽略定义域或端点约束。';
+      case 'english':
+        return '孤立记忆语法条条而忽略语境；时态与上下文不一致。';
+      case 'politics':
+        return '背诵结论却不穿透现象；混淆哲学范畴边界。';
+      case 'logic':
+        return '未先锁定论证结构就下判断；削弱/加强作用点找错。';
+      default:
+        return '未先明确知识适用前提就机械套用方法。';
+    }
   }
 
   private mockFollowup(question: string): string {
