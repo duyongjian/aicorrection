@@ -47,9 +47,13 @@ export function useLoop() {
       if (!uid) {
         const acc = await api.createAccount({ segment: seg });
         setAnonUser(acc.anon_user_id, seg);
-        tracker.setUser(acc.anon_user_id, seg);
         uid = acc.anon_user_id;
       }
+      // K1.4 放量就绪：trackingContext 是模块级内存态，刷新页面后会重置为 user_id=''，
+      // 而 anonUserId 从 localStorage 恢复 → 若只在新建账户时 setUser，后续所有埋点都会带
+      // 空 user_id，服务端 assignCohort('') 会把同一 loop 拆到不同 rollout_group。
+      // 因此无论 uid 来自新建账户还是本地恢复，每次都重新注入 tracker。
+      tracker.setUser(uid, seg);
       return uid as string;
     },
     [setAnonUser]

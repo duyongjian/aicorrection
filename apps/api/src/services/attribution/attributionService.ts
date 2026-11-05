@@ -9,7 +9,7 @@ import { MockProvider } from '../llm/mockProvider';
 import { env } from '../../config/env';
 import { isFeatureEnabled } from '../../config/rollout';
 import { createAttribution } from '../../models/attributionModel';
-import { insertEvent } from '../../models/analyticsEventModel';
+import { insertEvent, markExposureMockFlag } from '../../models/analyticsEventModel';
 import { generateAttributionId, generateEventId } from '../../utils/id';
 import { assignCohort, type CohortAssignment } from '../rollout/cohortService';
 import { withTimeout } from '../../utils/promise';
@@ -82,6 +82,7 @@ export async function generateAttribution(
       loopId: input.loop_id,
       anonUserId: input.anon_user_id,
       isInternal: input.is_internal ?? false,
+      isMock: provider.name === 'mock',
       feature: 'newExplanationStyle',
       featureOn: useNewExplanationStyle,
       cohort,
@@ -260,6 +261,7 @@ export async function generateAttribution(
       rollout_group: cohort.group,
       created_at: new Date().toISOString(),
     });
+    alignExposureMockFlag(input.loop_id, input.anon_user_id, isMock);
     return {
       status: 'ok',
       attribution_id: attributionId,
@@ -315,6 +317,7 @@ export async function generateAttribution(
     rollout_group: cohort.group,
     created_at: new Date().toISOString(),
   });
+  alignExposureMockFlag(input.loop_id, input.anon_user_id, isMock);
   return {
     status: 'ok',
     attribution_id: attributionId,
@@ -342,6 +345,8 @@ function emitRolloutExposure(p: {
   loopId: string;
   anonUserId: string;
   isInternal: boolean;
+  /** 入口时的 provider 判定；最终以归因行 isMock 为准，由 alignExposureMockFlag 对齐。 */
+  isMock: boolean;
   feature: string;
   featureOn: boolean;
   cohort: CohortAssignment;
@@ -364,11 +369,23 @@ function emitRolloutExposure(p: {
       ts_utc: new Date().toISOString(),
       idempotency_key: `rollout_exposure|${p.anonUserId}|${p.loopId}`,
       received_at: new Date().toISOString(),
-      is_mock: 0,
+      is_mock: p.isMock ? 1 : 0,
       is_internal: p.isInternal ? 1 : 0,
       rollout_group: p.cohort.group,
     });
   } catch {
     /* 埋点失败不影响主流程 */
+  }
+}
+
+/**
+ * 归因结果确定后，把入口已发的曝光事件 is_mock 对齐到最终值（fallback 时会由 0 变 1）。
+ * best-effort：默认 off 下无曝光行，UPDATE 影响 0 行，不产生任何写入。
+ */
+function alignExposureMockFlag(loopId: string, anonUserId: string, isMock: boolean): void {
+  try {
+    markExposureMockFlag(loopId, anonUserId, isMock);
+  } catch {
+    /* 埋点修正失败不影响主流程 */
   }
 }

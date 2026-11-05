@@ -24,7 +24,11 @@ const schema = z.object({
 router.post('/', (req, res, next) => {
   try {
     const parsed = schema.parse(req.body);
-    const result = ingest(parsed.events as unknown as TrackEvent[]);
+    // metadataMiddleware 是全局中间件，服务端按回环 IP / 白名单算出的 is_internal 在此可用。
+    // 传给 ingest 覆盖前端 context，保证埋点事件与归因/曝光事件同一判定口径（K1.4 放量就绪）。
+    const result = ingest(parsed.events as unknown as TrackEvent[], {
+      isInternal: req.is_internal ?? false,
+    });
     res.json(ok(result));
   } catch (e) {
     next(e);
