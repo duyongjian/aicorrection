@@ -1,12 +1,13 @@
 /**
  * 归因回归门禁（attrib:regress:real）
  *
- * 作用：一键跑「真实真题 29 题 + 知识锚点」全量评测，并对产出做 auto-eval 自动评分，
- *       以 PASS 率 / FAIL 数 / 陷阱未瞎编率为闸门，防回归。任何变体或锚点改动后运行即可确认不回退。
+ * 作用：一键跑「29 道历史真题 + 4 道多步数值专项题（共 33 题，SET 默认题集 real-exam-v2）+ 知识锚点」
+ *       全量评测，并对产出做 auto-eval 自动评分，以 PASS 率 / FAIL 数 / 陷阱未瞎编率为闸门，防回归。
+ *       任何变体或锚点改动后运行即可确认不回退。
  *
  * 依赖：本地真实模型（默认 http://localhost:8085/v1，见 getAnalysisProvider）。
  * 用法：
- *   npm run attrib:regress:real                 # 默认 v0.2b-guard-trap + 29 题真题 + 锚点
+ *   npm run attrib:regress:real                 # 默认 v0.2b-guard-trap + 33 题（29 历史 + 4 数值专项）+ 锚点
  *   VARIANT=v0.2-guard npm run attrib:regress:real
  *   SET=apps/.../prompt-ab-set-anchors.json npm run attrib:regress:real
  *   JSON=reports/prompt-ab-2026-..-tag.json npm run attrib:regress:real   # 复用已有报告，跳过模型评测
@@ -22,6 +23,18 @@ import { dirname, resolve } from 'node:path';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
+const IS_WIN = process.platform === 'win32';
+// Windows 上 npm 是 npm.cmd：spawn('npm') 直接 ENOENT，spawn('npm.cmd') 不带 shell 会 EINVAL。
+// 优先复用 npm 运行脚本时注入的 npm_execpath（npm-cli.js 绝对路径），用当前 node 直接执行，
+// 完全绕开扩展名与 cmd.exe 差异；直接 tsx 运行本脚本时退回 npm.cmd + shell=true。
+const NPM_CLI_JS = process.env.npm_execpath || '';
+const USE_NPM_CLI = /npm-cli\.js$/i.test(NPM_CLI_JS);
+const NPM_CMD = USE_NPM_CLI ? process.execPath : (IS_WIN ? 'npm.cmd' : 'npm');
+const NPM_LEAD = USE_NPM_CLI ? [NPM_CLI_JS] : [];
+const NPM_SHELL = !USE_NPM_CLI && IS_WIN;
+// node 也用当前解释器绝对路径，避免 PATH 上 node 解析差异。
+const NODE_CMD = process.execPath;
+
 const SET =
   process.env.SET ||
   resolve(ROOT, 'apps/api/src/tests/fixtures/prompt-ab-set-realexam.json');
@@ -29,9 +42,16 @@ const VARIANT = process.env.VARIANT || 'v0.2b-guard-trap';
 const TAG = process.env.TAG || 'regress-gate';
 const PROVIDER = process.env.PROVIDER || 'real';
 
+/** shell=true 时参数需自行加引号，否则路径含空格会被 cmd.exe 拆开。 */
+function shellQuote(arg) {
+  const s = String(arg);
+  return /[\s&|<>^]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
 function run(cmd, args, opts = {}) {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(cmd, args, { cwd: ROOT, ...opts });
+    const finalArgs = opts.shell ? args.map(shellQuote) : args;
+    const child = spawn(cmd, finalArgs, { cwd: ROOT, ...opts });
     let out = '';
     child.stdout.on('data', (d) => (out += d.toString()));
     child.stderr.on('data', (d) => (out += d.toString()));
@@ -77,7 +97,8 @@ let jsonPath = process.env.JSON ? resolve(ROOT, process.env.JSON) : null;
 if (jsonPath) {
   console.log(`[regress] 复用已有评测报告：${jsonPath}（跳过模型评测）`);
 } else {
-  const ab = await run('npm', [
+  const ab = await run(NPM_CMD, [
+    ...NPM_LEAD,
     'run',
     'prompt:ab',
     '--',
@@ -90,7 +111,7 @@ if (jsonPath) {
     '--anchors',
     '--tag',
     TAG,
-  ]);
+  ], { shell: NPM_SHELL });
   if (ab.code !== 0) {
     console.error('[regress] prompt:ab 执行失败');
     console.error(ab.out.slice(-800));
@@ -105,7 +126,7 @@ if (jsonPath) {
   console.log(`[regress] 评测报告：${jsonPath}`);
 }
 
-const ev = await run('node', [
+const ev = await run(NODE_CMD, [
   'apps/api/src/tests/auto-eval.mjs',
   '--json',
   jsonPath,
