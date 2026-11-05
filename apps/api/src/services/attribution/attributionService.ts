@@ -117,7 +117,9 @@ export async function generateAttribution(
     refResult && refResult.status === 'ok' && refResult.items?.[0]?.knowledge_point
       ? refResult.items[0].knowledge_point
       : undefined;
-  // 联网搜索参考块（P2）：默认开启（脱敏保证不变）；失败/超时/关闭→不注入，归因照常进行。
+  // 联网搜索参考块（P2）：WEB_SEARCH_ENABLED 默认 false（P0 数据主权修复，
+  // 见 docs/P0-数据主权默认外发修复.md）；仅在数据主体显式逐次确认后开启。
+  // 脱敏 ≠ 授权；失败/超时/关闭→不注入，归因照常进行。
   // 检索词优先用 RAG 知识点，无命中则退回脱敏题干。
   const webPromise = withTimeout(
     retrieveWebSearch(input.question, {
@@ -184,9 +186,10 @@ export async function generateAttribution(
   for (let attempt = 0; attempt <= env.ANALYSIS_MAX_RETRIES; attempt++) {
     try {
       analysisRes = await withTimeout(
-        // max_tokens：按分析强模型 ~3 tok/s 估算，4096 token 需 ~1400s，
+        // max_tokens：按历史基线 ~3 tok/s 估算，4096 token 需 ~1400s，
         // 远超超时预算（等于必然超时）；实测正常归因仅 ~93-448 token，
-        // 留约 3x 余量。真触发截断时由解析判定缺项 → 返回 incomplete（诚实失败，绝不补假数据）。
+        // 留约 3x 余量（2026-11-05 23:30 部署优化后 decode 已实测 9.76 tok/s，见 k1.5 §4.3）。
+        // 真触发截断时由解析判定缺项 → 返回 incomplete（诚实失败，绝不补假数据）。
         provider.chat(messages, { maxTokens }),
         TIMEOUT.ATTRIBUTION_MS
       );
