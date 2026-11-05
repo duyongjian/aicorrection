@@ -4,6 +4,7 @@
  * 幂等键 = anon_user_id|loop_id|event_name|event_seq|channel。
  */
 import { insertEvent } from '../../models/analyticsEventModel';
+import { assignCohort } from '../rollout/cohortService';
 import { generateEventId } from '../../utils/id';
 import type { TrackEvent, TrackIngestResponse } from '@aicorrection/shared';
 
@@ -34,6 +35,8 @@ export function ingest(events: TrackEvent[]): TrackIngestResponse {
         received_at: new Date().toISOString(),
         is_mock: ctx.is_mock ? 1 : 0,
         is_internal: ctx.is_internal ? 1 : 0,
+        // K1.4: 服务端按 anon_user_id 确定性推导分组，使所有埋点事件可按 cohort 切片分析
+        rollout_group: assignCohort(ctx.user_id ?? '').group,
       });
       if (isDup) {
         dup++;

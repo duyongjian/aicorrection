@@ -11,6 +11,11 @@ import type {
   InaccurateReason,
 } from './constants';
 
+// ===================== 灰度/金丝雀发布（K1.4） =====================
+
+/** 灰度分组：control（对照）/ treatment（实验）。两值受 attributions / analytics_events 的 CHECK 约束。 */
+export type RolloutGroup = 'control' | 'treatment';
+
 // ===================== 实体类型 =====================
 
 export interface User {
@@ -73,6 +78,8 @@ export interface Attribution {
   is_mock: number;
   /** T4: 是否内部账号 */
   is_internal: number;
+  /** K1.4: 灰度分组 control/treatment（按 cohort 落库，支撑 treatment vs control 指标对比） */
+  rollout_group: RolloutGroup;
   created_at: string;
 }
 
@@ -138,6 +145,8 @@ export interface AnalyticsEvent {
   is_mock: number;
   /** T4: 是否内部账号 */
   is_internal: number;
+  /** K1.4: 灰度分组 control/treatment（支撑按 cohort 的曝光/漏斗/指标分析） */
+  rollout_group: RolloutGroup;
 }
 
 // ===================== 统一响应信封 =====================

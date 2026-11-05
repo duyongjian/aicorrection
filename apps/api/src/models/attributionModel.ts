@@ -21,7 +21,7 @@ export function createAttribution(attribution: Attribution): void {
         attr_model_version, attr_latency_ms,
         rate_action, inaccurate_reason, expert_consistency, expert_accuracy,
         knowledge_point_id, cause_id, kq_taxonomy_version, cause_taxonomy_version,
-        is_mock, is_internal
+        is_mock, is_internal, rollout_group
       ) VALUES (
         @attribution_id, @loop_id, @anon_user_id, @mistake_id,
         @question, @user_answer,
@@ -29,7 +29,7 @@ export function createAttribution(attribution: Attribution): void {
         @attr_model_version, @attr_latency_ms,
         @rate_action, @inaccurate_reason, @expert_consistency, @expert_accuracy,
         @knowledge_point_id, @cause_id, @kq_taxonomy_version, @cause_taxonomy_version,
-        @is_mock, @is_internal
+        @is_mock, @is_internal, @rollout_group
       )`
     )
     .run(attribution);

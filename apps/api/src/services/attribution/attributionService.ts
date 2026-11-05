@@ -7,8 +7,11 @@
 import { getAnalysisProvider } from '../llm';
 import { MockProvider } from '../llm/mockProvider';
 import { env } from '../../config/env';
+import { isFeatureEnabled } from '../../config/rollout';
 import { createAttribution } from '../../models/attributionModel';
-import { generateAttributionId } from '../../utils/id';
+import { insertEvent } from '../../models/analyticsEventModel';
+import { generateAttributionId, generateEventId } from '../../utils/id';
+import { assignCohort, type CohortAssignment } from '../rollout/cohortService';
 import { withTimeout } from '../../utils/promise';
 import { TIMEOUT } from '../../config/timeout';
 import fs from 'node:fs';
@@ -67,6 +70,24 @@ export async function generateAttribution(
   // 归因分析走独立的分析 provider（ANALYSIS_*，可指向另一个本地强模型）
   const provider = getAnalysisProvider();
 
+  // ── K1.4 灰度：确定性分配 cohort + 计算 treatment 功能开关 ──
+  // 默认策略 off → cohort.group='control'、useNewExplanationStyle=false，运行期零行为变化。
+  const cohort: CohortAssignment = assignCohort(input.anon_user_id);
+  const useNewExplanationStyle = isFeatureEnabled('newExplanationStyle', cohort);
+  // 曝光事件（K1.4 安全红线）：仅当 strategy≠off 时，每条归因尝试发一次曝光；
+  // 默认 off / kill-switch（strategy 回落 off）下不发曝光，analytics_events 零新增。
+  // best-effort，不阻断主流程。
+  if (cohort.strategy !== 'off') {
+    emitRolloutExposure({
+      loopId: input.loop_id,
+      anonUserId: input.anon_user_id,
+      isInternal: input.is_internal ?? false,
+      feature: 'newExplanationStyle',
+      featureOn: useNewExplanationStyle,
+      cohort,
+    });
+  }
+
   // 是否有用户作答：有作答 → 诊断模式（错因/知识点/本质 三行）；
   // 无作答 → 讲解模式（正确答案/正确推导/常见陷阱 + 知识点/本质）。
   const hasAnswer = Boolean(input.user_answer && input.user_answer.trim());
@@ -115,8 +136,14 @@ export async function generateAttribution(
     { teach: !hasAnswer }
   );
 
+  const systemBase = hasAnswer ? ATTR_SYSTEM : ATTR_SYSTEM_NOANSWER;
+  // K1.4 treatment 功能：仅当命中（默认关闭，显式开启且仅 treatment 组）才追加"分步追问式讲解"指令。
+  const systemExtra = useNewExplanationStyle
+    ? '\n\n【讲解风格实验·treatment】请采用"分步追问式"讲解：每给出一步关键结论后，追加一句引导式' +
+      '追问（如"你能说出下一步为什么这样算吗？"），促使用户主动反思，而非一次性给全。'
+    : '';
   const messages: LlmMessage[] = [
-    { role: 'system', content: (hasAnswer ? ATTR_SYSTEM : ATTR_SYSTEM_NOANSWER) + refsBlock },
+    { role: 'system', content: systemBase + refsBlock + systemExtra },
     { role: 'user', content: userContent },
   ];
 
@@ -230,6 +257,7 @@ export async function generateAttribution(
       cause_taxonomy_version: 'v0.1',
       is_mock: isMock ? 1 : 0,
       is_internal: input.is_internal ? 1 : 0,
+      rollout_group: cohort.group,
       created_at: new Date().toISOString(),
     });
     return {
@@ -284,6 +312,7 @@ export async function generateAttribution(
     cause_taxonomy_version: 'v0.1',
     is_mock: isMock ? 1 : 0,
     is_internal: input.is_internal ? 1 : 0,
+    rollout_group: cohort.group,
     created_at: new Date().toISOString(),
   });
   return {
@@ -302,4 +331,44 @@ export async function generateAttribution(
     derivation: teaching.derivation ?? undefined,
     pitfalls: teaching.pitfalls ?? undefined,
   };
+}
+
+/**
+ * K1.4：发一条 rollout_exposure 曝光事件（best-effort，失败不影响主流程）。
+ * 把用户所属分组 + 功能命中写入 analytics_events.rollout_group，支撑 treatment vs control 对照。
+ * 调用方仅在 cohort.strategy !== 'off' 时调用；默认 off / kill-switch 下不发，保证零写入。
+ */
+function emitRolloutExposure(p: {
+  loopId: string;
+  anonUserId: string;
+  isInternal: boolean;
+  feature: string;
+  featureOn: boolean;
+  cohort: CohortAssignment;
+}): void {
+  try {
+    insertEvent({
+      event_id: generateEventId(),
+      event_name: 'rollout_exposure',
+      anon_user_id: p.anonUserId,
+      loop_id: p.loopId,
+      session_id: null,
+      context_json: JSON.stringify({ feature: p.feature }),
+      props_json: JSON.stringify({
+        group: p.cohort.group,
+        strategy: p.cohort.strategy,
+        pct: p.cohort.pct,
+        feature: p.feature,
+        feature_on: p.featureOn,
+      }),
+      ts_utc: new Date().toISOString(),
+      idempotency_key: `rollout_exposure|${p.anonUserId}|${p.loopId}`,
+      received_at: new Date().toISOString(),
+      is_mock: 0,
+      is_internal: p.isInternal ? 1 : 0,
+      rollout_group: p.cohort.group,
+    });
+  } catch {
+    /* 埋点失败不影响主流程 */
+  }
 }

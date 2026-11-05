@@ -192,4 +192,20 @@ export const env = {
   WEB_SEARCH_TIMEOUT_MS: toNum(process.env.WEB_SEARCH_TIMEOUT_MS, 6_000),
   /** 是否写本地审计日志（默认开；仅本地，不离开本机） */
   WEB_SEARCH_AUDIT: toBool(process.env.WEB_SEARCH_AUDIT, true),
+
+  // ---- 灰度 / 金丝雀发布（K1.4）----
+  // 安全红线：默认 ROLLOUT_STRATEGY='off' → 100% control，运行期现有行为零变化。
+  // 详见 apps/api/src/config/rollout.ts。
+  ROLLOUT_STRATEGY: (process.env.ROLLOUT_STRATEGY ?? 'off') as
+    | 'off'
+    | 'percentage'
+    | 'cohort',
+  /** percentage 策略下的放量比例（0-100）；默认 0（即不开） */
+  ROLLOUT_PCT: toNum(process.env.ROLLOUT_PCT, 0),
+  /** cohort 策略下的显式白名单（csv 逗号分隔的 anon_user_id） */
+  ROLLOUT_COHORT_ALLOWLIST: process.env.ROLLOUT_COHORT_ALLOWLIST ?? '',
+  /** 紧急熔断开关：'1'/'true' → 立即 100% 回退 control（最高优先级） */
+  ROLLOUT_KILL_SWITCH: toBool(process.env.ROLLOUT_KILL_SWITCH, false),
+  /** 示例 treatment 功能开关：新的"分步追问式讲解"风格；默认关闭，仅 treatment 组可见 */
+  ROLLOUT_FEAT_NEW_EXPLAIN: toBool(process.env.ROLLOUT_FEAT_NEW_EXPLAIN, false),
 };
