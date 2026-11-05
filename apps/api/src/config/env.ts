@@ -169,11 +169,14 @@ export const env = {
   /** onnx 推理执行提供方：cpu（默认，稳）| cuda（有独显且装了 onnxruntime 的 GPU 包时可选） */
   BGE_DEVICE: (process.env.BGE_DEVICE ?? 'cpu') as 'cpu' | 'cuda',
 
-  // ---- 联网搜索（P2，默认开启）----
-  // 数据主权铁律硬约束：默认开启，但脱敏保证不变 —— 仍只外发"学科 + 知识点主题词"，
-  // 绝不外发学生作答 / 姓名 / 手机号 / 邮箱等 PII；审计日志仅落本地 data/websearch_audit.log，
-  // 不离开本机。开启后仅作"仅供参考"的 grounding，不参与三行契约解析。
-  WEB_SEARCH_ENABLED: toBool(process.env.WEB_SEARCH_ENABLED, true),
+  // ---- 联网搜索（P2，默认关闭）----
+  // 数据主权铁律硬约束（P0，2026-11-05 修复）：**默认必须关闭，绝不外发任何内容到第三方**。
+  // 历史缺陷：此处曾默认 true，与 webSearchService.ts / sanitize.ts 文件头的铁律注释矛盾，
+  // 导致题干被发往 bing/duckduckgo/baidu/google（审计日志 79 条实证）。sanitize 只截 80 字
+  // 并剔 PII，**题干本身就是用户内容**，脱敏不等于"可以外发"。
+  // 任何开启都必须由数据主体（用户）显式、逐次确认，并在配置中写明用途与接收方；
+  // 禁止以"默认开启 + 脱敏"替代授权。审计日志仅落本地 data/websearch_audit.log。
+  WEB_SEARCH_ENABLED: toBool(process.env.WEB_SEARCH_ENABLED, false),
   /** 检索提供方：engine-html（默认，无 key，抓 Bing/DuckDuckGo 等搜索页）| searxng（自托管，返回 JSON，更稳） */
   WEB_SEARCH_PROVIDER: (process.env.WEB_SEARCH_PROVIDER ?? 'engine-html') as
     | 'engine-html'

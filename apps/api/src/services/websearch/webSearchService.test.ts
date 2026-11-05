@@ -11,10 +11,16 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { sanitizeSearchQuery } from './sanitize';
 import { parseBing, parseDuckDuckGo, parseSearXNG } from './parsers';
 import { retrieveWebSearch } from './webSearchService';
 import { env } from '../../config/env';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const envTsPath = path.resolve(here, '../../config/env.ts');
 
 const BING_HTML = `
 <li class="b_algo"><h2><a href="https://example.com/implicit">隐函数求导 链式法则</a></h2><p>对方程两边求导，注意 y 是 x 的函数，乘 y'。</p></li>
@@ -109,8 +115,10 @@ test('retrieveWebSearch 脱敏后为空返回 empty', async () => {
 test('retrieveWebSearch fetch 抛错返回 unavailable（不抛错）', async () => {
   const prevEnabled = env.WEB_SEARCH_ENABLED;
   const prevProvider = env.WEB_SEARCH_PROVIDER;
+  const prevAudit = env.WEB_SEARCH_AUDIT;
   env.WEB_SEARCH_ENABLED = true;
   env.WEB_SEARCH_PROVIDER = 'engine-html';
+  env.WEB_SEARCH_AUDIT = false; // 单测不写本地审计日志，保持审计证据链干净
   const realFetch = globalThis.fetch;
   // 强制 fetch 失败
   (globalThis as unknown as { fetch: unknown }).fetch = () =>
@@ -122,6 +130,7 @@ test('retrieveWebSearch fetch 抛错返回 unavailable（不抛错）', async ()
   } finally {
     env.WEB_SEARCH_ENABLED = prevEnabled;
     env.WEB_SEARCH_PROVIDER = prevProvider;
+    env.WEB_SEARCH_AUDIT = prevAudit;
     globalThis.fetch = realFetch;
   }
 });
@@ -130,9 +139,11 @@ test('retrieveWebSearch mock fetch 返回 Bing HTML → ok 且条目被解析', 
   const prevEnabled = env.WEB_SEARCH_ENABLED;
   const prevProvider = env.WEB_SEARCH_PROVIDER;
   const prevEngine = env.WEB_SEARCH_ENGINE;
+  const prevAudit = env.WEB_SEARCH_AUDIT;
   env.WEB_SEARCH_ENABLED = true;
   env.WEB_SEARCH_PROVIDER = 'engine-html';
   env.WEB_SEARCH_ENGINE = 'bing';
+  env.WEB_SEARCH_AUDIT = false; // 单测不写本地审计日志，保持审计证据链干净
   const realFetch = globalThis.fetch;
   (globalThis as unknown as { fetch: unknown }).fetch = async () =>
     new Response(BING_HTML, { status: 200, headers: { 'Content-Type': 'text/html' } });
@@ -145,6 +156,76 @@ test('retrieveWebSearch mock fetch 返回 Bing HTML → ok 且条目被解析', 
     env.WEB_SEARCH_ENABLED = prevEnabled;
     env.WEB_SEARCH_PROVIDER = prevProvider;
     env.WEB_SEARCH_ENGINE = prevEngine;
+    env.WEB_SEARCH_AUDIT = prevAudit;
+    globalThis.fetch = realFetch;
+  }
+});
+
+// ===== P0 数据主权铁律防回归（2026-11-05）=====
+// 背景：WEB_SEARCH_ENABLED 曾默认 true，题干被发往第三方搜索引擎（审计日志 79 条实证）。
+// 以下三条锁死护栏：默认值文本 / 关闭时零对外请求 / 显式开启时作答不外发。
+
+test('P0-A env.ts 的 WEB_SEARCH_ENABLED 默认值必须为 false', () => {
+  const src = fs.readFileSync(envTsPath, 'utf-8');
+  assert.match(
+    src,
+    /WEB_SEARCH_ENABLED:\s*toBool\(process\.env\.WEB_SEARCH_ENABLED,\s*false\)/,
+    '默认值改回 true 会静默把用户题干外发到第三方搜索引擎；如需开启必须由数据主体显式逐次确认，并同步本测试'
+  );
+});
+
+test('P0-B 关闭状态下 retrieveWebSearch 零对外 fetch（比 status=empty 更强）', async () => {
+  const prevEnabled = env.WEB_SEARCH_ENABLED;
+  const prevAudit = env.WEB_SEARCH_AUDIT;
+  env.WEB_SEARCH_ENABLED = false;
+  env.WEB_SEARCH_AUDIT = false;
+  const realFetch = globalThis.fetch;
+  let calls = 0;
+  (globalThis as unknown as { fetch: unknown }).fetch = async () => {
+    calls += 1;
+    return new Response(BING_HTML, { status: 200 });
+  };
+  try {
+    const r = await retrieveWebSearch('已知函数 f(x)=x^3-3x，求单调区间。', {
+      subject: 'math',
+      userAnswer: '我的私人作答-绝不可外发',
+    });
+    assert.equal(calls, 0, '关闭状态下不得发出任何对外 fetch');
+    assert.equal(r.status, 'empty');
+    assert.deepEqual(r.items, []);
+  } finally {
+    env.WEB_SEARCH_ENABLED = prevEnabled;
+    env.WEB_SEARCH_AUDIT = prevAudit;
+    globalThis.fetch = realFetch;
+  }
+});
+
+test('P0-C 显式开启时学生作答绝不进入外发检索词', async () => {
+  const prevEnabled = env.WEB_SEARCH_ENABLED;
+  const prevAudit = env.WEB_SEARCH_AUDIT;
+  env.WEB_SEARCH_ENABLED = true;
+  env.WEB_SEARCH_AUDIT = false;
+  const realFetch = globalThis.fetch;
+  const urls: string[] = [];
+  const secret = '我的私人作答SECRET-99123';
+  (globalThis as unknown as { fetch: unknown }).fetch = async (url: unknown) => {
+    urls.push(String(url));
+    return new Response(BING_HTML, { status: 200 });
+  };
+  try {
+    await retrieveWebSearch('已知函数 f(x)=x^3-3x，求单调区间。', {
+      subject: 'math',
+      userAnswer: secret,
+      knowledgePoint: '导数与单调性判定',
+    });
+    assert.ok(urls.length > 0, '显式开启后应发起检索');
+    for (const u of urls) {
+      assert.ok(!u.includes(secret), '外发 URL 不得含学生作答明文');
+      assert.ok(!u.includes(encodeURIComponent(secret)), '外发 URL 不得含学生作答编码');
+    }
+  } finally {
+    env.WEB_SEARCH_ENABLED = prevEnabled;
+    env.WEB_SEARCH_AUDIT = prevAudit;
     globalThis.fetch = realFetch;
   }
 });
