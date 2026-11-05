@@ -3,8 +3,9 @@
  */
 import { useCallback } from 'react';
 import { useLoopStore } from '../store/loopStore';
-import { api, describeError } from '../api/client';
+import { api, describeError, getUploadErrorMeta } from '../api/client';
 import { tracker } from '../tracking/sdk';
+import { classifyUploadError, newUploadAttemptId } from '@aicorrection/shared';
 import type {
   Segment,
   OcrStatus,
@@ -14,6 +15,9 @@ import type {
   FollowupResponse,
   RateAction,
   InaccurateReason,
+  UploadFailureStage,
+  UploadFailureReason,
+  UploadRequestPhase,
 } from '@aicorrection/shared';
 
 export interface DraftPayload {
@@ -59,12 +63,69 @@ export function useLoop() {
     [setAnonUser]
   );
 
+  /**
+   * 上传尝试（v0.1.x：失败细分埋点）。
+   *
+   * 口径纪律：一次尝试有且仅有一个终态事件——
+   *   - 拿到 200 + loop → `loop_upload`（含 ocr_status='fail'，仍是 G1/M5 唯一正式信号）
+   *   - 未拿到 200 + loop → `upload_fail`（client_validation / account_create /
+   *     transport / server_reject / business_error，受控枚举）
+   * 两者互斥，故「尝试总数 = loop_upload 数 + upload_fail 数」，不会重复计数。
+   */
   const upload = useCallback(
     async (payload: DraftPayload): Promise<UploadResponse> => {
       setLoading(true);
       setError(null);
+      const attemptId = newUploadAttemptId();
+      const t0 = Date.now();
+      // K1.4 同源修复：trackingContext 是模块级内存态，刷新后 user_id 为空。
+      // 客户端校验 / 建账户失败发生在 ensureAccount() 之前，若不先注入已恢复的 uid，
+      // 这几条 upload_fail 会带空 user_id（anon_user_id=NULL、cohort 漂移）。
+      const cachedUid = useLoopStore.getState().anonUserId;
+      if (cachedUid) tracker.setUser(cachedUid, payload.segment);
+      const base = {
+        upload_attempt_id: attemptId,
+        src_type: payload.src_type,
+        subject: payload.subject,
+        retry_count: payload.retry_count ?? 0,
+        photo_blur: payload.photo_blur ?? false,
+      };
+      let failureEmitted = false;
+      const emitFailure = (extra: {
+        failure_stage: UploadFailureStage;
+        failure_reason: UploadFailureReason;
+        http_status?: number;
+        backend_code?: number;
+        loop_id?: string;
+      }): void => {
+        failureEmitted = true;
+        tracker.uploadFail({
+          ...base,
+          upload_duration_ms: Date.now() - t0,
+          ...extra,
+        });
+      };
+      let phase: UploadRequestPhase = 'account_create';
+
       try {
+        // 客户端校验（防御性兜底；UploadPage 也会先拦一次，此处保证事件不漏）
+        if (payload.src_type === 'photo' && !payload.imageFile) {
+          emitFailure({
+            failure_stage: 'client_validation',
+            failure_reason: 'missing_image',
+          });
+          throw new Error('请先选择或拍摄一张题目照片');
+        }
+        if (payload.src_type !== 'photo' && !(payload.raw_text ?? '').trim()) {
+          emitFailure({
+            failure_stage: 'client_validation',
+            failure_reason: 'missing_text',
+          });
+          throw new Error('请先输入或粘贴题目内容');
+        }
+
         const uid = await ensureAccount(payload.segment);
+        phase = 'upload';
         let result: UploadResponse;
         const common = {
           anon_user_id: uid,
@@ -98,9 +159,23 @@ export function useLoop() {
           subject: payload.subject,
           upload_duration_ms: common.upload_duration_ms,
           loop_id: result.loop_id,
+          upload_attempt_id: attemptId,
         });
+        // ocr_status='fail' 仍只由 loop_upload 承载：不发 upload_fail，避免 M5 双重计数。
         return result;
       } catch (e) {
+        if (!failureEmitted) {
+          const meta = getUploadErrorMeta(e);
+          emitFailure(
+            meta
+              ? classifyUploadError({ ...meta, phase })
+              : classifyUploadError({
+                  phase,
+                  hasResponse: false,
+                  message: describeError(e),
+                })
+          );
+        }
         const msg = describeError(e);
         const hint = /Network|ECONN|ERR_|无法连接|timeout/i.test(msg)
           ? '无法连接后端服务（:3001），请确认已运行 npm run dev 且后端已启动'

@@ -396,3 +396,37 @@ export interface M1Stats {
 }
 
 export interface DashboardM1Response extends M1Stats {}
+
+// ===================== 上传失败细分（v0.1.x 诊断口径） =====================
+
+export interface UploadFailureBucket {
+  key: string;
+  count: number;
+}
+
+/**
+ * 尝试级上传失败诊断。与 G1/M5 的关系：
+ *  - `m5` 段逐字复现 M5 正式口径（分母 loop_upload 总数、分子 ocr_status='fail'），**不得改写**；
+ *  - `attempt_*` 是新增诊断口径，把传输/服务端/校验失败纳入分母与分子，通常会比 M5 更高；
+ *  - 两者必须同时上报，禁止用 attempt_* 替换 M5 去「让指标好看或难看」。
+ */
+export interface UploadFailureBreakdown {
+  window: string;
+  /** 统计范围说明，固定为真实流量过滤条件 */
+  scope: string;
+  /** 尝试总数 = loop_upload 总数 + upload_fail 总数 */
+  attempt_total: number;
+  /** 失败总数 = ocr_fail + upload_fail 总数（两类事件互斥） */
+  failure_total: number;
+  attempt_failure_rate: number;
+  /** G1/M5 原口径，保持不变 */
+  m5: {
+    loop_upload_total: number;
+    ocr_fail: number;
+    upload_fail_rate: number;
+  };
+  /** stage='ocr' 由 loop_upload.ocr_status='fail' 合成，其余来自 upload_fail */
+  by_stage: UploadFailureBucket[];
+  by_reason: UploadFailureBucket[];
+  by_stage_reason: UploadFailureBucket[];
+}

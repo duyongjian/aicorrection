@@ -2,7 +2,8 @@
  * 埋点全局 Context + 事件 Schema（前后端共用）
  * 对齐：架构设计文档 §3.3 / 埋点方案 §1.2 / §2
  */
-import type { Segment, Platform, ExpGroup } from './constants';
+import type { Segment, Platform, ExpGroup, SrcType } from './constants';
+import type { UploadFailureStage, UploadFailureReason } from './uploadFailure';
 
 /** 渠道来源 */
 export const CHANNELS = ['organic', 'referral', 'app_store', 'web', 'qr'] as const;
@@ -116,6 +117,31 @@ export interface LoopUploadProps {
   subject?: string;
   upload_duration_ms: number;
   loop_id: string; // 此处生成
+  /** v0.1.x 增量：客户端尝试 ID，用于与 upload_fail 关联（可选，旧消费方可忽略）。 */
+  upload_attempt_id?: string;
+}
+
+/**
+ * v0.1.x 增量：上传失败细分诊断事件 props。
+ * 与 loop_upload.ocr_status='fail' **互斥**：本事件只在「未拿到 200 + loop」时上报，
+ * 因而尝试数 = loop_upload 数 + upload_fail 数，不会重复计数。
+ *
+ * 数据主权：只允许受控枚举 + 数值，**禁止**写入学生题干/作答/图片/原始错误文案。
+ */
+export interface UploadFailProps {
+  /** 必需：服务端幂等键作用域；同一次尝试重发会被去重。 */
+  upload_attempt_id: string;
+  failure_stage: UploadFailureStage;
+  failure_reason: UploadFailureReason;
+  src_type: SrcType;
+  retry_count: number;
+  photo_blur: boolean;
+  upload_duration_ms: number;
+  subject?: string;
+  http_status?: number;
+  backend_code?: number;
+  /** 仅当服务端已生成 loop、但后续处理失败时才有值；绝大多数情况为空。 */
+  loop_id?: string;
 }
 
 export interface LoopAttrShowProps {

@@ -10,6 +10,7 @@ import type {
   LoopAttrShowProps,
   AttrRateProps,
   FollowupProps,
+  UploadFailProps,
 } from '@aicorrection/shared';
 
 export function makeLoopUpload(
@@ -18,6 +19,23 @@ export function makeLoopUpload(
 ): TrackEvent {
   return {
     event_name: EVENT_NAMES.LOOP_UPLOAD,
+    context: buildContext({ loopId: props.loop_id, eventSeq }),
+    props: props as unknown as Record<string, unknown>,
+    ts_utc: new Date().toISOString(),
+  };
+}
+
+/**
+ * v0.1.x 增量：上传失败诊断事件。
+ * 不带 loop_id 时 context.loop_id 为空，服务端幂等键改用 props.upload_attempt_id
+ * 作为作用域，保证同一用户的多次失败不会被误去重。
+ */
+export function makeUploadFail(
+  props: UploadFailProps,
+  eventSeq = 1
+): TrackEvent {
+  return {
+    event_name: EVENT_NAMES.UPLOAD_FAIL,
     context: buildContext({ loopId: props.loop_id, eventSeq }),
     props: props as unknown as Record<string, unknown>,
     ts_utc: new Date().toISOString(),

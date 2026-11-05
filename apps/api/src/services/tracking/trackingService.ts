@@ -11,7 +11,14 @@ import type { TrackEvent, TrackIngestResponse } from '@aicorrection/shared';
 function buildIdempotencyKey(e: TrackEvent): string {
   const c = e.context;
   const channel = c.channel ?? 'organic';
-  return `${c.user_id ?? ''}|${c.loop_id ?? ''}|${e.event_name}|${c.event_seq ?? 1}|${channel}`;
+  // v0.1.x：upload_fail 没有 loop_id，若仍用空串作作用域，同一用户的所有失败事件
+  // 会因 key 完全相同被幂等去重成 1 条。用客户端 attempt id 作为替代作用域。
+  // 对既有事件（有 loop_id 或无 attempt id）返回值逐字不变，零行为变化。
+  const attemptId = e.props?.['upload_attempt_id'];
+  const scope =
+    c.loop_id ??
+    (typeof attemptId === 'string' && attemptId ? `attempt:${attemptId}` : '');
+  return `${c.user_id ?? ''}|${scope}|${e.event_name}|${c.event_seq ?? 1}|${channel}`;
 }
 
 /** 服务端权威元数据（metadataMiddleware 计算，前端不可信）。 */

@@ -66,6 +66,8 @@ export const EVENT_NAMES = {
   LOOP_ATTR_SHOW: 'loop_attr_show',
   ATTR_RATE: 'attr_rate',
   FOLLOWUP: 'followup',
+  /** v0.1.x 增量：上传失败细分（诊断事件，不参与 G1/M5 正式口径） */
+  UPLOAD_FAIL: 'upload_fail',
 } as const;
 export type EventName = (typeof EVENT_NAMES)[keyof typeof EVENT_NAMES];
 

@@ -16,6 +16,7 @@ import type {
   TrackIngestRequest,
   TrackIngestResponse,
   M1Stats,
+  UploadFailureBreakdown,
   ReviewPendingResponse,
   ReviewWriteRequest,
   ReviewWriteResponse,
@@ -35,32 +36,82 @@ const http = axios.create({
   timeout: REQUEST_TIMEOUT_MS,
 });
 
+/**
+ * 上传错误的**结构化信号**（v0.1.x 上传失败细分埋点）。
+ * 只保留判定所需的枚举/数值/axios 原生信息；`message` 仅用于 classifyUploadError
+ * 判断超时/网络关键词，**绝不写入埋点 props**（避免把学生内容或错误回显带出本机）。
+ */
+export interface UploadErrorMeta {
+  hasResponse: boolean;
+  httpStatus?: number;
+  axiosCode?: string;
+  message?: string;
+  backendCode?: number;
+}
+
+const UPLOAD_ERROR_KEY = '__uploadErrorMeta';
+
+function attachMeta(err: unknown, meta: UploadErrorMeta): unknown {
+  const e = err instanceof Error ? err : new Error(describeError(err));
+  Object.defineProperty(e, UPLOAD_ERROR_KEY, { value: meta, enumerable: false });
+  return e;
+}
+
+/** 取出响应拦截器附带的结构化信号；非 HTTP 错误（如前端校验）返回 undefined。 */
+export function getUploadErrorMeta(e: unknown): UploadErrorMeta | undefined {
+  if (!e || typeof e !== 'object') return undefined;
+  const v = (e as Record<string, unknown>)[UPLOAD_ERROR_KEY];
+  return v && typeof v === 'object' ? (v as UploadErrorMeta) : undefined;
+}
+
 // 统一错误处理：把后端 {code,message}（业务错误）与 HTTP 错误转成可读 Error，
 // 便于 UI 显示具体原因（而不是笼统的“上传失败”）。
 http.interceptors.response.use(
   (r) => {
     const body = r.data as { code?: number; message?: string } | undefined;
     if (body && typeof body.code === 'number' && body.code !== 0) {
-      return Promise.reject(new Error(body.message || `业务错误（${body.code}）`));
+      const meta: UploadErrorMeta = {
+        hasResponse: true,
+        httpStatus: r.status,
+        backendCode: body.code,
+      };
+      return Promise.reject(
+        attachMeta(new Error(body.message || `业务错误（${body.code}）`), meta)
+      );
     }
     return r;
   },
   (err) => {
     const resp = (err as { response?: { data?: { message?: string }; status?: number } })
       .response;
-    if (resp?.data?.message) return Promise.reject(new Error(resp.data.message));
-    if (resp?.status) return Promise.reject(new Error(`请求失败（HTTP ${resp.status}）`));
-    // 超时（axios 主动 abort）或连接被拒：给出人话，避免笼统"归因请求失败"
     const e = err as { code?: string; message?: string };
+    const meta: UploadErrorMeta = {
+      hasResponse: !!resp,
+      ...(resp?.status === undefined ? {} : { httpStatus: resp.status }),
+      ...(e?.code === undefined ? {} : { axiosCode: e.code }),
+      ...(e?.message === undefined ? {} : { message: e.message }),
+    };
+    if (resp?.data?.message) {
+      return Promise.reject(attachMeta(new Error(resp.data.message), meta));
+    }
+    if (resp?.status) {
+      return Promise.reject(attachMeta(new Error(`请求失败（HTTP ${resp.status}）`), meta));
+    }
+    // 超时（axios 主动 abort）或连接被拒：给出人话，避免笼统"归因请求失败"
     if (e?.code === 'ECONNABORTED' || /timeout|timed out/i.test(e?.message ?? '')) {
       return Promise.reject(
-        new Error('请求超时：后端分析模型响应过慢或已断开，可重试或改用更小的分析模型')
+        attachMeta(
+          new Error('请求超时：后端分析模型响应过慢或已断开，可重试或改用更小的分析模型'),
+          meta
+        )
       );
     }
     if (/ECONNREFUSED|ENOTFOUND|Network Error/i.test(e?.message ?? '')) {
-      return Promise.reject(new Error('无法连接后端服务（:3001），请确认已运行 npm run dev'));
+      return Promise.reject(
+        attachMeta(new Error('无法连接后端服务（:3001），请确认已运行 npm run dev'), meta)
+      );
     }
-    return Promise.reject(err);
+    return Promise.reject(attachMeta(err, meta));
   }
 );
 
@@ -114,6 +165,13 @@ export const api = {
 
   dashboardM1(windowDays = 14): Promise<M1Stats> {
     return http.get(`/dashboard/m1?window_days=${windowDays}`).then((r) => r.data.data);
+  },
+
+  /** 上传失败细分诊断（v0.1.x 增量，不参与 G1/M5 正式口径）。 */
+  dashboardUploadFailures(windowDays = 14): Promise<UploadFailureBreakdown> {
+    return http
+      .get(`/dashboard/upload-failures?window_days=${windowDays}`)
+      .then((r) => r.data.data);
   },
 
   pendingReviews(

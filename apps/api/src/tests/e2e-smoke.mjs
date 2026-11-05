@@ -303,6 +303,50 @@ async function main() {
     assert(false, `screen_view 冻结校验：异常 ${e?.message?.split('\n')[0] ?? e}`);
   }
 
+  // T5-4) 上传失败细分埋点（v0.1.x）：无 loop_id 时按 upload_attempt_id 幂等
+  log('');
+  log('=== T5-4: 上传失败细分埋点 ===');
+  const failEvent = (attemptId, stage, reason) => ({
+    event_name: 'upload_fail',
+    context: {
+      app_version: '0.1.0', platform: 'web', user_id: anonUserId,
+      segment: 'kaoyan', session_id: sessionId,
+      ts_utc: now(), event_seq: 1, exp_group: 'none', channel: 'organic',
+    },
+    props: {
+      upload_attempt_id: attemptId, failure_stage: stage, failure_reason: reason,
+      src_type: 'photo', retry_count: 0, photo_blur: false, upload_duration_ms: 320,
+    },
+    ts_utc: now(),
+  });
+  const trackFail = await call('POST', '/track', {
+    events: [
+      failEvent('ua_smoke_transport_' + Date.now(), 'transport', 'network_error'),
+      failEvent('ua_smoke_server_' + Date.now(), 'server_reject', 'http_5xx'),
+    ],
+  });
+  assert(
+    trackFail.status === 200 && trackFail.data?.data?.accepted === 2,
+    '两条不同 attempt 的 upload_fail 各落库 1 条（不被空 loop_id 误去重）'
+  );
+
+  const dupAttemptId = 'ua_smoke_dup_' + Date.now();
+  const dupFailEvent = failEvent(dupAttemptId, 'transport', 'network_error');
+  const trackFailDup = await call('POST', '/track', { events: [dupFailEvent] });
+  const trackFailDup2 = await call('POST', '/track', { events: [dupFailEvent] });
+  assert(
+    trackFailDup.data?.data?.accepted === 1 && trackFailDup2.data?.data?.dup === 1,
+    '同 attempt 重发被幂等去重'
+  );
+
+  const dashFail = await call('GET', '/dashboard/upload-failures?window_days=14');
+  assert(
+    dashFail.status === 200 && dashFail.data?.code === 0 &&
+      typeof dashFail.data?.data?.m5?.upload_fail_rate === 'number' &&
+      Array.isArray(dashFail.data?.data?.by_stage),
+    'GET /dashboard/upload-failures 返回 M5 原口径 + 分层聚合'
+  );
+
   log(`\n结果：通过 ${pass} 项，失败 ${failCount} 项`);
   process.exit(failCount === 0 ? 0 : 1);
 }

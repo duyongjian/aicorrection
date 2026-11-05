@@ -47,9 +47,11 @@ process.on('exit', () => {
 function makeEvent(opts: {
   user?: string;
   loop?: string;
+  noLoop?: boolean;
   name?: string;
   seq?: number;
   ctxInternal?: boolean;
+  props?: Record<string, unknown>;
 } = {}): TrackEvent {
   return {
     event_name: opts.name ?? 'loop_attr_show',
@@ -59,13 +61,13 @@ function makeEvent(opts: {
       user_id: opts.user ?? 'user_k14_a',
       segment: 'kaoyan',
       session_id: 'sess_k14_test',
-      loop_id: opts.loop ?? 'loop_k14_1',
+      loop_id: opts.noLoop ? undefined : (opts.loop ?? 'loop_k14_1'),
       ts_utc: new Date().toISOString(),
       event_seq: opts.seq ?? 1,
       exp_group: DEFAULT_EXP_GROUP,
       ...(opts.ctxInternal === undefined ? {} : { is_internal: opts.ctxInternal }),
     },
-    props: {},
+    props: opts.props ?? {},
     ts_utc: new Date().toISOString(),
   };
 }
@@ -198,4 +200,67 @@ test('曝光/展示/评价在同一 serverMeta 下 is_internal 同源', () => {
     "SELECT DISTINCT is_internal AS v FROM analytics_events WHERE loop_id='loop_funnel'"
   ).map((r) => r.v);
   assert.deepEqual(vals, [1], '三类事件必须同为内部流量，WHERE is_internal=0 才不会切断漏斗');
+});
+
+// ── 7) v0.1.x 上传失败细分：无 loop_id 的事件用 attempt id 作幂等作用域 ────────
+test('upload_fail：同一用户不同 attempt 各落 1 条，不被误去重', () => {
+  const base = {
+    name: 'upload_fail' as const,
+    noLoop: true,
+    user: 'user_upload_fail',
+  };
+  const e1 = makeEvent({
+    ...base,
+    props: {
+      upload_attempt_id: 'ua_attempt_1',
+      failure_stage: 'transport',
+      failure_reason: 'network_error',
+    },
+  });
+  const e2 = makeEvent({
+    ...base,
+    props: {
+      upload_attempt_id: 'ua_attempt_2',
+      failure_stage: 'server_reject',
+      failure_reason: 'http_5xx',
+    },
+  });
+  assert.equal(ingest([e1, e2], { isInternal: false }).accepted, 2);
+  const rows = all(
+    "SELECT props_json FROM analytics_events WHERE event_name='upload_fail' AND anon_user_id='user_upload_fail'"
+  );
+  assert.equal(rows.length, 2);
+  assert.equal(all("SELECT is_mock FROM analytics_events WHERE event_name='upload_fail'")[0]?.is_mock, 0);
+});
+
+test('upload_fail：同 attempt 重发被幂等去重（dup=1）', () => {
+  const e = makeEvent({
+    name: 'upload_fail',
+    noLoop: true,
+    user: 'user_upload_dup',
+    props: { upload_attempt_id: 'ua_same_attempt', failure_stage: 'transport' },
+  });
+  assert.equal(ingest([e], { isInternal: false }).accepted, 1);
+  assert.equal(ingest([e], { isInternal: false }).dup, 1);
+  assert.equal(
+    all(
+      "SELECT COUNT(*) AS n FROM analytics_events WHERE event_name='upload_fail' AND anon_user_id='user_upload_dup'"
+    )[0]?.n,
+    1
+  );
+});
+
+test('既有事件带 loop_id 时幂等键格式逐字不变（零行为变化）', () => {
+  const e = makeEvent({
+    name: 'loop_upload',
+    loop: 'loop_legacy_key',
+    user: 'user_legacy',
+    seq: 1,
+    props: { upload_attempt_id: 'ua_should_not_change_key', ocr_status: 'success' },
+  });
+  ingest([e], { isInternal: false });
+  const key = all(
+    "SELECT idempotency_key AS k FROM analytics_events WHERE loop_id='loop_legacy_key'"
+  )[0]?.k;
+  assert.equal(key, 'user_legacy|loop_legacy_key|loop_upload|1|organic');
 });
