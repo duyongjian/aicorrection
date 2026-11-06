@@ -203,24 +203,50 @@ export function parseTeaching(text: string): ParsedTeaching {
 
 interface FoundField { value: string; index: number; }
 
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
- * 在 [0, beforeIndex) 范围内找最后一个 label 标记（如 "错因："/"错因:"），
- * 取其值为其后文本直到下一个已知标记或文末。
+ * 构造「字段标记」匹配正则。两种合法形态：
+ *  A. 行内带冒号：`正确推导：...` / `正确推导: ...`（v0.1 契约，原样保留）
+ *  B. 标记单独成行、冒号省略：`正确推导\n$$...$$`（Qwen3.5-9B 等模型高频出现，
+ *     见 docs/k1.5-G1闸门报告框架.md §4.5 / §4.6）
+ *
+ * 分支 B 刻意要求「整行除标记外只有空白/装饰」，避免把正文里顺带提到
+ * 「以下给出正确推导的思路」这类句子误判成标题而切断字段值。
+ * 装饰允许 markdown 强调符、列表符与序号；行首装饰不使用 \s，以免跨行吞掉换行
+ * （分支 A 仍保留原有的 \s*，逐字维持旧行为）。
+ */
+function buildFieldRegex(labels: string[]): RegExp {
+  const alt = labels.map(escapeRegExp).join('|');
+  const deco = '[ \\t>*\\-–—\\d.、（）()]';
+  const lineHeading = `^${deco}*(?:${alt})${deco}*[:：]?[ \\t]*$`;
+  const inlineColon = `(?:${alt})\\s*[:：]`;
+  return new RegExp(`${lineHeading}|${inlineColon}`, 'gm');
+}
+
+/**
+ * 在 [0, beforeIndex) 范围内找最后一个 label 标记（如 "错因："/"错因:"，
+ * 或单独成行的 "错因"），取其值为其后文本直到下一个已知标记或文末。
  * beforeIndex 用于"向前回溯"锚定同一结论块，过滤掉更靠后的思考噪音。
+ *
+ * 注意：切分结束位置必须使用与标记识别**同一套**正则。否则无冒号标题虽被识别，
+ * 其后的 "常见陷阱：" 仍会被吞进 derivation，导致核心三段判不全、字段互相污染。
  */
 function findLastField(text: string, labels: string[], beforeIndex: number | null): FoundField | undefined {
+  const anyMarker = buildFieldRegex(FIELD_MARKERS);
   let best: FoundField | null = null;
   for (const label of labels) {
-    const re = new RegExp(`${label}\\s*[:：]`, 'g');
+    const re = buildFieldRegex([label]);
     let m: RegExpExecArray | null;
     while ((m = re.exec(text)) !== null) {
       if (beforeIndex !== null && m.index >= beforeIndex) break;
+      if (m[0].length === 0) { re.lastIndex++; continue; }
       const after = text.slice(m.index + m[0].length);
-      let end = after.length;
-      for (const marker of FIELD_MARKERS) {
-        const p = new RegExp(`\\s*${marker}\\s*[:：]`).exec(after);
-        if (p && p.index < end) end = p.index;
-      }
+      anyMarker.lastIndex = 0;
+      const p = anyMarker.exec(after);
+      const end = p ? p.index : after.length;
       const value = after.slice(0, end).trim();
       if (value) best = { value, index: m.index };
     }

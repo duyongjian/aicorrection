@@ -13,7 +13,7 @@
     "rag:import": "tsx src/scripts/importQbank.ts",
     "rag:import:mmulu": "tsx src/scripts/import_mmulu.ts",
     "rag:index": "tsx src/scripts/buildQbankIndex.ts",
-    "test": "tsx --test src/services/rollout/cohortService.test.ts src/services/tracking/trackingService.test.ts src/services/tracking/uploadFailure.test.ts src/services/dashboardService.test.ts src/services/attribution/references.test.ts src/services/rag/rag.test.ts src/services/websearch/webSearchService.test.ts"
+    "test": "tsx --test src/services/rollout/cohortService.test.ts src/services/tracking/trackingService.test.ts src/services/tracking/uploadFailure.test.ts src/services/dashboardService.test.ts src/services/attribution/references.test.ts src/services/attribution/prompt.test.ts src/services/rag/rag.test.ts src/services/websearch/webSearchService.test.ts"
   },
   "dependencies": {
     "@aicorrection/shared": "*",
