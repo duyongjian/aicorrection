@@ -1,6 +1,6 @@
 {
-  "version": "real-exam-v2",
-  "note": "K1.3 真实分布扩样集（v2 回归门禁数值一致性判据）：题目均为真实考试真题（高考/考研/中考风格数、物、化、英、语），学生作答由编写者按常见错误类型拟定，provisional_truth 为正确解法/错误归因（非专家盲评结论，仅供 auto-eval 方向对照）。trap=true 表示学生作答本身正确（用于检测强行归因）。mode=teach 为无作答、只求讲解。本集用于弥补线上库无可恢复真实学生错题（attributions.question/user_answer 全 NULL）的缺口。v2 变更：原有 29 个 case 逐字未改，在数组末尾追加 4 道 mode=teach 多步数值计算专项题（nx01~nx04，覆盖极值三元配对 / 单调区间开闭与导数符号 / 二阶导拐点与符号翻转 / 数列方程多步求解），均带 expected_facts 结构化金标准字段（schema=1，字段与判据规则见 docs/回归门禁数值判据.md）。auto-eval.mjs 仅对声明了 expected_facts 的 case 启用严格数值/配对判据，其余 case 评分逻辑与 v1 完全一致，历史报告重跑结论不变。",
+  "version": "real-exam-v3",
+  "note": "K1.3 真实分布扩样集（v2 回归门禁数值一致性判据）：题目均为真实考试真题（高考/考研/中考风格数、物、化、英、语），学生作答由编写者按常见错误类型拟定，provisional_truth 为正确解法/错误归因（非专家盲评结论，仅供 auto-eval 方向对照）。trap=true 表示学生作答本身正确（用于检测强行归因）。mode=teach 为无作答、只求讲解。本集用于弥补线上库无可恢复真实学生错题（attributions.question/user_answer 全 NULL）的缺口。v2 变更：原有 29 个 case 逐字未改，在数组末尾追加 4 道 mode=teach 多步数值计算专项题（nx01~nx04，覆盖极值三元配对 / 单调区间开闭与导数符号 / 二阶导拐点与符号翻转 / 数列方程多步求解），均带 expected_facts 结构化金标准字段（schema=1，字段与判据规则见 docs/回归门禁数值判据.md）。auto-eval.mjs 仅对声明了 expected_facts 的 case 启用严格数值/配对判据，其余 case 评分逻辑与 v1 完全一致，历史报告重跑结论不变。v3 变更（2026-11-06）：新增 monotonic_direction「方向标签↔区间集合」双向绑定断言，给 nx02 增加该断言，并在末尾追加 nx05 反号对照题（g(x)=-x^3+3x，增减方向与 f(x)=x^3-3x 恰好相反），题数 33→34。原 29 道历史 case 与 nx01/nx03/nx04 逐字未改，nx02 仅新增一条断言。动机：Qwen3.5-9B 实测中 v0.2b-guard-trap 的「正确推导」写对导数符号，但「正确答案」行 10/10 把增/减区间整体写反，旧 interval 断言只校验期望段是否出现、text 断言只是子串存在性，均拦不住。",
   "cases": [
     {
       "id": "rm01",
@@ -343,6 +343,23 @@
         "tolerance": 0.05,
         "assertions": [
           {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": {
+              "segments": [
+                { "left": -2, "right": -1 },
+                { "left": 1, "right": 2 }
+              ]
+            },
+            "decreasing": {
+              "segments": [
+                { "left": -1, "right": 1 }
+              ]
+            }
+          },
+          {
             "kind": "interval",
             "label": "增区间",
             "segments": [
@@ -465,6 +482,70 @@
             "kind": "text",
             "label": "通项",
             "any_of": ["2^n-1", "2^{n}-1", "2ⁿ-1"],
+            "source": "answer"
+          }
+        ]
+      }
+    },
+    {
+      "id": "nx05",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设 $g(x)=-x^{3}+3x$，定义域限制为 $[-2,2]$。请由 $g'(x)$ 的符号写出单调递增区间与单调递减区间（端点开闭须与定义域一致），并给出极大值与极小值的数值。作答须显式写出「增区间」「减区间」以及 $g(?)=?$ 的配对关系，不能只罗列数字。",
+      "user_answer": null,
+      "provisional_truth": "$g'(x)=-3x^{2}+3=3(1-x)(1+x)$：$g'(x)>0 \\iff -1<x<1$，$g'(x)<0 \\iff x<-1$ 或 $x>1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-1,1]$，减区间 $[-2,-1]$ 与 $[1,2]$。极大值 $g(1)=2$，极小值 $g(-1)=-2$。注意本题增减方向与 $f(x)=x^{3}-3x$ 恰好相反，用于检出「背答案」或「系统性方向反转」。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定（反号对照）",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": {
+              "segments": [
+                { "left": -1, "right": 1 }
+              ]
+            },
+            "decreasing": {
+              "segments": [
+                { "left": -2, "right": -1 },
+                { "left": 1, "right": 2 }
+              ]
+            }
+          },
+          {
+            "kind": "interval",
+            "label": "增区间",
+            "segments": [
+              { "left": -1, "right": 1, "left_bracket": "[", "right_bracket": "]" }
+            ],
+            "source": "answer"
+          },
+          {
+            "kind": "interval",
+            "label": "减区间",
+            "segments": [
+              { "left": -2, "right": -1, "left_bracket": "[", "right_bracket": "]" },
+              { "left": 1, "right": 2, "left_bracket": "[", "right_bracket": "]" }
+            ],
+            "source": "answer"
+          },
+          {
+            "kind": "pair",
+            "label": "极大值",
+            "at": 1,
+            "value": 2,
+            "source": "answer"
+          },
+          {
+            "kind": "pair",
+            "label": "极小值",
+            "at": -1,
+            "value": -2,
             "source": "answer"
           }
         ]

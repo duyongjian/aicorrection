@@ -19,6 +19,8 @@
  *   - answer_correct:    讲解题答案是否正确
  *   - self_contradict:   输出自身是否自相矛盾（筛查信号）
  *   - numeric_facts:     仅对声明 expected_facts 的 case 启用严格数值/配对判据（见下方专节）
+ *                        支持 pair | set | interval | monotonic_direction | text 五类断言；
+ *                        monotonic_direction 专门拦截「推导对、答案行把增/减方向写反」
  */
 
 import fs from 'node:fs';
@@ -378,6 +380,107 @@ function evalIntervalAssertion(a, sources, tol) {
   };
 }
 
+// ── 单调方向绑定判据（2026-11-06） ─────────────────────────────────────────────
+// 背景：Qwen3.5-9B 离线评测里 v0.2b-guard-trap 的「正确推导」写对了 f'(x)>0 ⇒ 递增，
+// 但「正确答案」行把增/减区间整体写反（10/10）。原有判据都拦不住：
+//   - interval 只要求「期望段出现」，且标签字面必须命中「增区间/减区间」，
+//     遇到「单调递增区间」等别名会直接找不到锚点而误杀；
+//   - text 只是子串存在性，不绑定「哪个符号对应哪个方向」；
+//   - evalTeach 三选一即 PASS，数字集合一致就算过。
+// 这里把「方向标签 ↔ 区间集合」做成双向绑定：
+//   1) 每个方向的期望段必须全部出现在该方向的子句内；
+//   2) 每个方向的子句内不得出现另一方向的期望段（增/减写反的直接信号）；
+//   3) 两个方向都必须给出区间。
+// strict_brackets 默认 false：教材对单调区间端点开闭写法不统一（[-2,-1] vs [-2,-1)），
+// 这里只校验端点数值；严格开闭由同 case 的 interval 断言负责（如 nx02）。
+
+const MONOTONIC_ALIASES = {
+  increasing: ['单调递增区间', '单调增区间', '递增区间', '增区间', '上升区间'],
+  decreasing: ['单调递减区间', '单调减区间', '递减区间', '减区间', '下降区间'],
+};
+
+function fmtSegment(s) {
+  return `${s.left_bracket ?? '['}${s.left},${s.right}${s.right_bracket ?? ']'}`;
+}
+
+function fmtParsedIntervals(list) {
+  return list.map((p) => `${p.left_bracket}${p.left},${p.right}${p.right_bracket}`).join(' ');
+}
+
+/** 方向别名可能在同一处命中多次（如「单调递增区间」同时含「递增区间」「增区间」），去重后再判定与展示。 */
+function dedupeIntervals(list) {
+  const seen = new Set();
+  return list.filter((p) => {
+    const key = `${p.left_bracket}${p.left},${p.right}${p.right_bracket}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function segmentHit(parsed, seg, tol, strictBrackets) {
+  return parsed.some((p) =>
+    numEq(p.left, Number(seg.left), tol) &&
+    numEq(p.right, Number(seg.right), tol) &&
+    (!strictBrackets || (
+      bracketMatch(p.left_bracket, seg.left_bracket) &&
+      bracketMatch(p.right_bracket, seg.right_bracket)
+    ))
+  );
+}
+
+/** monotonic_direction 断言：方向标签与区间集合的双向绑定（写反即 FAIL）。 */
+function evalMonotonicDirectionAssertion(a, sources, tol) {
+  const label = String(a.label ?? '单调方向');
+  const strictBrackets = !!a.strict_brackets;
+  const sourceText = pickSource(sources, a.source);
+  const dirs = ['increasing', 'decreasing'];
+  const cn = { increasing: '增', decreasing: '减' };
+  const cfg = {};
+  const parsed = {};
+  const problems = [];
+
+  for (const dir of dirs) {
+    const d = a[dir] && typeof a[dir] === 'object' ? a[dir] : {};
+    cfg[dir] = (Array.isArray(d.segments) ? d.segments : []).filter(
+      (s) => Number.isFinite(Number(s.left)) && Number.isFinite(Number(s.right))
+    );
+  }
+
+  for (const dir of dirs) {
+    const d = a[dir] && typeof a[dir] === 'object' ? a[dir] : {};
+    const anchors = Array.isArray(d.match_any) && d.match_any.length ? d.match_any : MONOTONIC_ALIASES[dir];
+    const clause = clauseFor(sourceText, anchors, { rightPad: 180, leftPad: 40, rightStops: /[\n。;；,，]/ });
+    parsed[dir] = dedupeIntervals(parseIntervals(clause));
+    if (!clause.trim()) {
+      problems.push(`「${cn[dir]}」方向标签未命中（锚点 [${anchors.join(' | ')}]）`);
+      continue;
+    }
+    if (cfg[dir].length === 0) {
+      problems.push(`「${cn[dir]}」未声明期望段`);
+      continue;
+    }
+    if (parsed[dir].length === 0) {
+      problems.push(`「${cn[dir]}」子句内未检到区间表达式`);
+      continue;
+    }
+    const missing = cfg[dir].filter((s) => !segmentHit(parsed[dir], s, tol, strictBrackets));
+    if (missing.length) problems.push(`「${cn[dir]}」缺少期望段 [${missing.map(fmtSegment).join(' ')}]`);
+    // 方向互斥：反向期望段出现在本方向子句内 ⇒ 增/减被交换。
+    const other = dir === 'increasing' ? 'decreasing' : 'increasing';
+    const conflict = cfg[other].filter((s) => segmentHit(parsed[dir], s, tol, false));
+    if (conflict.length) {
+      problems.push(`「${cn[dir]}」子句内出现反向区间 [${conflict.map(fmtSegment).join(' ')}] ⇒ 方向写反`);
+    }
+  }
+
+  const expected = dirs.map((d) => `${cn[d]}须含 ${(cfg[d] || []).map(fmtSegment).join(' ') || '(未声明)'}`).join('；')
+    + `；两方向互斥${strictBrackets ? '（校验开闭）' : '（不校验开闭）'}`;
+  const detected = dirs.map((d) => `${cn[d]}=[${fmtParsedIntervals(parsed[d] || [])}]`).join(' ')
+    + (problems.length ? `；问题：${problems.join(' | ')}` : '；两方向绑定一致');
+  return { ok: problems.length === 0, kind: 'monotonic_direction', label, expected, detected };
+}
+
 /** text 断言：子串级 all_of / any_of / none_of，用于导数符号、通项写法等结构性描述。 */
 function evalTextAssertion(a, sources) {
   const label = String(a.label ?? '');
@@ -423,23 +526,25 @@ function evalNumericFacts(r, expectedFacts) {
       case 'pair': res = evalPairAssertion(a, sources, tol); break;
       case 'set': res = evalSetAssertion(a, sources, tol); break;
       case 'interval': res = evalIntervalAssertion(a, sources, tol); break;
+      case 'monotonic_direction': res = evalMonotonicDirectionAssertion(a, sources, tol); break;
       case 'text': res = evalTextAssertion(a, sources); break;
       default:
         res = {
           ok: false,
           kind: String((a && a.kind) || 'unknown'),
           label: String((a && a.label) || ''),
-          expected: '受支持的断言类型：pair | set | interval | text',
+          expected: '受支持的断言类型：pair | set | interval | monotonic_direction | text',
           detected: `未知 kind=${String((a && a.kind) || 'undefined')}`,
         };
     }
     if (!res.ok) failures.push(res);
   }
   if (failures.length > 0) {
-    const reason = failures.some((f) => f.kind === 'pair') ? 'numeric_pair_mismatch'
-      : failures.some((f) => f.kind === 'interval') ? 'numeric_interval_mismatch'
-        : failures.some((f) => f.kind === 'set') ? 'numeric_set_mismatch'
-          : 'numeric_fact_mismatch';
+    const reason = failures.some((f) => f.kind === 'monotonic_direction') ? 'numeric_direction_mismatch'
+      : failures.some((f) => f.kind === 'pair') ? 'numeric_pair_mismatch'
+        : failures.some((f) => f.kind === 'interval') ? 'numeric_interval_mismatch'
+          : failures.some((f) => f.kind === 'set') ? 'numeric_set_mismatch'
+            : 'numeric_fact_mismatch';
     const detail = failures.map((f) => `[${f.kind}/${f.label}] 期望 ${f.expected}；实际 ${f.detected}`).join(' | ');
     return { verdict: 'FAIL', reason, detail };
   }
@@ -747,6 +852,7 @@ export {
   evalTeach,
   evalDiagnose,
   evalNumericFacts,
+  evalMonotonicDirectionAssertion,
   scoreResult,
   computeTruthHitRate,
   resolveSources,

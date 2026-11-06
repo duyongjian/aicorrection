@@ -1,13 +1,13 @@
 /**
  * 归因回归门禁（attrib:regress:real）
  *
- * 作用：一键跑「29 道历史真题 + 4 道多步数值专项题（共 33 题，SET 默认题集 real-exam-v2）+ 知识锚点」
+ * 作用：一键跑「29 道历史真题 + 5 道多步数值专项题（共 34 题，SET 默认题集 real-exam-v3）+ 知识锚点」
  *       全量评测，并对产出做 auto-eval 自动评分，以 PASS 率 / FAIL 数 / 陷阱未瞎编率为闸门，防回归。
  *       任何变体或锚点改动后运行即可确认不回退。
  *
  * 依赖：本地真实模型（默认 http://localhost:8085/v1，见 getAnalysisProvider）。
  * 用法：
- *   npm run attrib:regress:real                 # 默认 v0.2b-guard-trap + 33 题（29 历史 + 4 数值专项）+ 锚点
+ *   npm run attrib:regress:real                 # 默认 v0.2b-guard-trap + 34 题（29 历史 + 5 数值专项）+ 锚点
  *   VARIANT=v0.2-guard npm run attrib:regress:real
  *   SET=apps/.../prompt-ab-set-anchors.json npm run attrib:regress:real
  *   JSON=reports/prompt-ab-2026-..-tag.json npm run attrib:regress:real   # 复用已有报告，跳过模型评测

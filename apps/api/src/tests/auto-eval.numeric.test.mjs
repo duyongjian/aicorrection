@@ -11,6 +11,8 @@
  *   - 旧 case 无 expected_facts → 评分结果与改动前完全一致（仍走 evalTeach / evalDiagnose）
  *   - 命中率过低（漏 --set）→ 非零退出并提示 --set
  *   - 现成 ext 报告的 10 条错误输出至少 9 条判 FAIL
+ *   - monotonic_direction 方向绑定：正确/别名/开闭差异不误杀；增/减写反、「推导对答案反」判 FAIL
+ *   - 9B ext 真实报告回放：v0.1 4/10、v0.2b-guard-trap 0/10
  *
  * 所有 report 均在内存/临时目录构造，仅读取仓库内既有 reports/*.json 作回归证据，
  * 不联网、不访问 8085/8087 模型服务、不启动 3001 API、不碰生产库。
@@ -39,9 +41,13 @@ const REPO_ROOT = path.resolve(HERE, '../../../..');
 const AUTO_EVAL = path.join(HERE, 'auto-eval.mjs');
 const SET_PATH = path.join(HERE, 'fixtures', 'prompt-ab-set-realexam.json');
 const DEFAULT_SET_PATH = path.join(HERE, 'fixtures', 'prompt-ab-set.json');
+const MONOTONIC_SET_PATH = path.join(HERE, 'fixtures', 'prompt-ab-set-monotonic.json');
 const EXT_REPORT = path.join(REPO_ROOT, 'reports', 'prompt-ab-2026-11-05T16-24-06-4b-ext.json');
+const EXT_9B_REPORT = path.join(REPO_ROOT, 'reports', 'prompt-ab-2026-11-06T02-20-00-9b-ext.json');
 
 const setDoc = JSON.parse(fs.readFileSync(SET_PATH, 'utf8'));
+const monotonicDoc = JSON.parse(fs.readFileSync(MONOTONIC_SET_PATH, 'utf8'));
+const monotonicGold = (id) => monotonicDoc.cases.find((c) => c.id === id).expected_facts;
 const gold = (id) => {
   const c = setDoc.cases.find((x) => x.id === id);
   assert.ok(c, `题集应包含 ${id}`);
@@ -209,11 +215,11 @@ test('旧 diagnose case（无 expected_facts）→ 与 evalDiagnose 原判定完
   assert.deepEqual(actual, expected);
 });
 
-test('题集 29 道历史 case 逐字未改（无 expected_facts），新增 4 道均带金标准', () => {
-  assert.equal(setDoc.version, 'real-exam-v2');
-  assert.equal(setDoc.cases.length, 33);
+test('题集 29 道历史 case 逐字未改（无 expected_facts），新增 5 道均带金标准', () => {
+  assert.equal(setDoc.version, 'real-exam-v3');
+  assert.equal(setDoc.cases.length, 34);
   assert.equal(setDoc.cases.slice(0, 29).filter((c) => c.expected_facts).length, 0);
-  assert.deepEqual(setDoc.cases.slice(29).map((c) => c.id), ['nx01', 'nx02', 'nx03', 'nx04']);
+  assert.deepEqual(setDoc.cases.slice(29).map((c) => c.id), ['nx01', 'nx02', 'nx03', 'nx04', 'nx05']);
   assert.ok(setDoc.cases.slice(29).every((c) => c.mode === 'teach' && c.expected_facts.schema === 1));
 });
 
@@ -276,4 +282,97 @@ test('reports/*-4b-ext.json 的 10 条错误输出按 nx01 金标准回放 ≥9 
   const failCount = verdicts.filter((v) => v.verdict === 'FAIL').length;
   assert.ok(failCount >= 9, `期望 ≥9 条 FAIL，实测 ${failCount}`);
   assert.ok(verdicts.every((v) => v.reason.startsWith('numeric_')));
+});
+
+// ── monotonic_direction：方向标签 ↔ 区间集合 双向绑定 ────────────────────────────
+// 动机：Qwen3.5-9B 的 v0.2b-guard-trap 在「正确推导」里把 f'(x)>0 ⇒ 递增 写对了，
+// 却在「正确答案」行 10/10 把增/减区间整体交换。旧 interval 只查期望段是否出现、
+// text 只查子串，都拦不住；下面把该症状与各种表述变体固化成回归用例。
+
+const DIRECTION_FACTS = {
+  schema: 1,
+  tolerance: 0.05,
+  assertions: [monotonicGold('mx01').assertions[0]],
+};
+const INC_RIGHT = '增区间 [-2,-1] 和 [1,2]，减区间 [-1,1]；极大值 f(-1)=2，极小值 f(1)=-2。';
+const INC_REVERSED = '增区间 [-1,1]，减区间 [-2,-1] 和 [1,2]；极大值 f(-1)=2，极小值 f(1)=-2。';
+
+test('monotonic_direction：方向正确 → PASS', () => {
+  const res = evalNumericFacts(makeResult('mx01', INC_RIGHT), DIRECTION_FACTS);
+  assert.equal(res.verdict, 'PASS');
+  assert.equal(res.reason, 'numeric_facts_match');
+});
+
+test('monotonic_direction：标签别名「单调递增区间/单调递减区间」不误杀', () => {
+  const answer = '单调递增区间为 $[-2,-1]$ 和 $[1,2]$，单调递减区间为 $[-1,1]$。';
+  assert.equal(evalNumericFacts(makeResult('mx01', answer), DIRECTION_FACTS).verdict, 'PASS');
+});
+
+test('monotonic_direction：标签别名「递增区间/递减区间」不误杀', () => {
+  const answer = '递增区间 [-2,-1]、[1,2]；递减区间 [-1,1]。';
+  assert.equal(evalNumericFacts(makeResult('mx01', answer), DIRECTION_FACTS).verdict, 'PASS');
+});
+
+test('monotonic_direction：增/减整体写反 → FAIL / numeric_direction_mismatch', () => {
+  const res = evalNumericFacts(makeResult('mx01', INC_REVERSED), DIRECTION_FACTS);
+  assert.equal(res.verdict, 'FAIL');
+  assert.equal(res.reason, 'numeric_direction_mismatch');
+  assert.match(res.detail, /方向写反/);
+  assert.match(res.detail, /反向区间/);
+});
+
+test('monotonic_direction：推导写对、答案行写反（9B guard 症状）→ 仍判 FAIL', () => {
+  const derivation = "f'(x)=3(x-1)(x+1)；x∈[-2,-1) 时 f'(x)>0 函数递增；x∈(-1,1) 时 f'(x)<0 函数递减。";
+  const res = evalNumericFacts(makeResult('mx01', INC_REVERSED, derivation), DIRECTION_FACTS);
+  assert.equal(res.verdict, 'FAIL');
+  assert.equal(res.reason, 'numeric_direction_mismatch');
+});
+
+test('monotonic_direction：strict_brackets=false 容忍教材开闭差异，true 则拦下', () => {
+  const open = '增区间 [-2,-1) 和 (1,2]，减区间 (-1,1)。';
+  assert.equal(evalNumericFacts(makeResult('mx01', open), DIRECTION_FACTS).verdict, 'PASS');
+  const strict = {
+    schema: 1,
+    assertions: [{ ...DIRECTION_FACTS.assertions[0], strict_brackets: true }],
+  };
+  assert.equal(evalNumericFacts(makeResult('mx01', open), strict).verdict, 'FAIL');
+});
+
+test('monotonic_direction：两方向写成同一区间 / 缺一个方向 → 均 FAIL', () => {
+  const same = '增区间 [-1,1]，减区间 [-1,1]。';
+  const res1 = evalNumericFacts(makeResult('mx01', same), DIRECTION_FACTS);
+  assert.equal(res1.verdict, 'FAIL');
+  assert.match(res1.reason, /numeric_direction_mismatch/);
+  const missing = '增区间 [-2,-1] 和 [1,2]，减区间未给出。';
+  const res2 = evalNumericFacts(makeResult('mx01', missing), DIRECTION_FACTS);
+  assert.equal(res2.verdict, 'FAIL');
+  assert.match(res2.detail, /未检到区间表达式|缺少期望段|未命中/);
+});
+
+test('nx05 反号对照题：正确 → PASS，照抄 f(x)=x^3-3x 的答案 → FAIL', () => {
+  const right = '增区间 [-1,1]，减区间 [-2,-1] 和 [1,2]；极大值 g(1)=2，极小值 g(-1)=-2。';
+  assert.equal(evalNumericFacts(makeResult('nx05', right), gold('nx05')).verdict, 'PASS');
+  const copied = '增区间 [-2,-1] 和 [1,2]，减区间 [-1,1]；极大值 g(1)=2，极小值 g(-1)=-2。';
+  const res = evalNumericFacts(makeResult('nx05', copied), gold('nx05'));
+  assert.equal(res.verdict, 'FAIL');
+  assert.equal(res.reason, 'numeric_direction_mismatch');
+});
+
+test('nx02 新增方向断言后，正确输出仍 PASS（零误杀）', () => {
+  const right = '增区间 [-2,-1] 和 [1,2]，减区间 [-1,1]；极大值 f(-1)=2，极小值 f(1)=-2。';
+  const der = "f'(x)=3x^2-3；f'(x)>0 当 x<-1 或 x>1，f'(x)<0 当 -1<x<1。";
+  assert.equal(evalNumericFacts(makeResult('nx02', right, der), gold('nx02')).verdict, 'PASS');
+});
+
+test('9B ext 真实报告回放：v0.1 4/10 通过，v0.2b-guard-trap 0/10 全被方向判据拦下', {
+  skip: !fs.existsSync(EXT_9B_REPORT) ? '9B ext 报告不存在（reports/ 已 gitignore）' : false,
+}, () => {
+  const report = JSON.parse(fs.readFileSync(EXT_9B_REPORT, 'utf8'));
+  assert.equal(report.results.length, 20);
+  const verdicts = report.results.map((r) => ({ variant: r.variant, ...evalNumericFacts(r, monotonicGold('mx01')) }));
+  const passOf = (v) => verdicts.filter((x) => x.variant === v && x.verdict === 'PASS').length;
+  assert.equal(passOf('v0.1'), 4);
+  assert.equal(passOf('v0.2b-guard-trap'), 0);
+  assert.ok(verdicts.filter((x) => x.variant === 'v0.2b-guard-trap')
+    .every((x) => x.reason === 'numeric_direction_mismatch'));
 });

@@ -461,12 +461,58 @@ const V04_CAREFUL: PromptVariant = {
   maxTokens: { diagnose: 1536, teach: 1792 },
 };
 
+/**
+ * v0.2c / v0.2d：离线评测专用候选，**不接生产**（DEFAULT_VARIANT_ID 仍为 v0.2b）。
+ *
+ * 动机（2026-11-06，Qwen3.5-9B 实测）：v0.2b-guard-trap 的「正确推导」把
+ * f'(x)>0 ⇒ 递增 写对了，「正确答案」行却 10/10 把增/减区间整体交换；
+ * 这是"总结阶段反转"而非不会算。故只在 teach system 增加一条
+ * 「答案行必须与推导的符号结论逐项一致」的约束，验证 prompt 层能否修掉。
+ *
+ * A/B 单变量保证：diagnose system、tail、maxTokens、五段契约全部复用 V02B，
+ * 只追加规则文本；两个候选的差别仅是规则放置位置（末尾 vs 最前），
+ * 用于排除"指令位置靠后被忽略"这一干扰因素。
+ * 规则内**不给任何具体结论**（不泄漏驻点 ±1、区间、极值），只给校验方法。
+ */
+const MONOTONIC_CHECK_RULE = `【最终答案一致性回读（最高优先级，讲解涉及单调性/极值时必须执行）】
+输出五段之前，逐项回读一次"正确推导"，用它核对"正确答案"行：
+- 推导中导数为正（f'(x)>0）的 x 范围必须写进「增区间」；导数为负（f'(x)<0）的 x 范围必须写进「减区间」。两者严禁互换。
+- 导数由正变负的驻点对应极大值，由负变正对应极小值；「极大值 f(?)=?」与「极小值 f(?)=?」的位置、数值严禁互换。
+- 若"正确答案"行与推导的符号结论不一致，必须改写"正确答案"行使其一致；严禁反过来改推导去迁就答案，也严禁在总结时交换增/减方向或极大/极小标签。
+- 只做内部核对，不输出核对过程，不改变五段结构与标记行。`;
+
+const V02C_MONOTONIC_CHECK: PromptVariant = {
+  id: 'v0.2c-monotonic-check',
+  label: '答案行符号一致性回读（末尾）',
+  hypothesis: '9B 推导对、答案行 10/10 写反；在 teach system 末尾追加「答案行与推导符号结论逐项回读」能否修掉反转',
+  system: {
+    diagnose: V02B_GUARD_TRAP.system.diagnose,
+    teach: `${V02B_GUARD_TRAP.system.teach}\n\n${MONOTONIC_CHECK_RULE}`,
+  },
+  tail: V02B_GUARD_TRAP.tail,
+  maxTokens: { ...V02B_GUARD_TRAP.maxTokens },
+};
+
+const V02D_MONOTONIC_PREFIX: PromptVariant = {
+  id: 'v0.2d-monotonic-prefix',
+  label: '答案行符号一致性回读（前置）',
+  hypothesis: '同 v0.2c，但把一致性规则放到 system 最前面，排除「指令靠后被忽略」的干扰',
+  system: {
+    diagnose: V02B_GUARD_TRAP.system.diagnose,
+    teach: `${MONOTONIC_CHECK_RULE}\n\n${V02B_GUARD_TRAP.system.teach}`,
+  },
+  tail: V02B_GUARD_TRAP.tail,
+  maxTokens: { ...V02B_GUARD_TRAP.maxTokens },
+};
+
 export const PROMPT_VARIANTS: Record<string, PromptVariant> = {
   [V01.id]: V01,
   [V01_STRICT.id]: V01_STRICT,
   [V01_MIN.id]: V01_MIN,
   [V02_GUARD.id]: V02_GUARD,
   [V02B_GUARD_TRAP.id]: V02B_GUARD_TRAP,
+  [V02C_MONOTONIC_CHECK.id]: V02C_MONOTONIC_CHECK,
+  [V02D_MONOTONIC_PREFIX.id]: V02D_MONOTONIC_PREFIX,
   [V03_GUARD3.id]: V03_GUARD3,
   [V04_CAREFUL.id]: V04_CAREFUL,
 };
@@ -480,6 +526,12 @@ export const PROMPT_VARIANTS: Record<string, PromptVariant> = {
  *  - 真实真题 29 题（prompt-ab-set-realexam）：v0.2b 全量 28/29 合规、陷阱题未瞎编 1/1；
  *    相对 v0.2-guard 净修复 ry01 陷阱编造（genuine 27/29 → 28/29），无回归，唯一剩余失败 re03
  *    为 "neither of + 复数 → 单数" 语法知识缺口（与变体无关，需 RAG/更强模型）。
+ *
+ * ⚠️ 澄清（2026-11-06）：本常量只是**评测脚手架的默认变体**，并非生产在用配置。
+ * `attributionService.ts` 仍硬编码 `ATTR_SYSTEM` / `ATTR_SYSTEM_NOANSWER`（等价 v0.1），
+ * 全仓除本文件外无生产代码引用 `PROMPT_VARIANTS` / `DEFAULT_VARIANT_ID`。
+ * 注册表中的 `v0.2c-monotonic-check`、`v0.2d-monotonic-prefix` 为**离线评测专用候选**
+ * （验证 9B「答案行增/减写反」能否靠 prompt 修掉），**禁止接入生产**；G1 未过前 v0.2 全线冻结。
  */
 export const DEFAULT_VARIANT_ID = V02B_GUARD_TRAP.id;
 

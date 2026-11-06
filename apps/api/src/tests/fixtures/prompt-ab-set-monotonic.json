@@ -1,0 +1,318 @@
+{
+  "version": "monotonic-v1",
+  "note": "单调方向专项采样集（2026-11-06）：mx01~mx10 为同一道题的 10 次独立采样，用于量化「增/减区间方向」正确率而非单题偶然；my01~my02 为反号对照（g(x)=-x^3+3x，增减方向与原题恰好相反），用于区分「系统性方向反转」与「背答案」。所有 case 均声明 expected_facts，评分走 auto-eval 严格判据：monotonic_direction 双向绑定 + 极值 pair 配对。用途：(1) 回放 reports/prompt-ab-2026-11-06T02-20-00-9b-ext.json（把 ex01..ex10 映射为 mx01..mx10）；(2) prompt:ab --set 本文件 跑新模型/prompt 的 A/B。全程本地，不联网检索、不外发题干。",
+  "cases": [
+    {
+      "id": "mx01",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $f(x)=x^{3}-3x$，定义域限制为 $[-2,2]$。请由 $f'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $f(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$f'(x)=3x^{2}-3=3(x-1)(x+1)$，驻点 $x=-1,1$；$f'(x)>0 \\iff x<-1$ 或 $x>1$，$f'(x)<0 \\iff -1<x<1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-2,-1]$ 与 $[1,2]$，减区间 $[-1,1]$。极大值 $f(-1)=2$，极小值 $f(1)=-2$。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] },
+            "decreasing": { "segments": [{ "left": -1, "right": 1 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": -1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": 1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "mx02",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $f(x)=x^{3}-3x$，定义域限制为 $[-2,2]$。请由 $f'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $f(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$f'(x)=3x^{2}-3=3(x-1)(x+1)$，驻点 $x=-1,1$；$f'(x)>0 \\iff x<-1$ 或 $x>1$，$f'(x)<0 \\iff -1<x<1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-2,-1]$ 与 $[1,2]$，减区间 $[-1,1]$。极大值 $f(-1)=2$，极小值 $f(1)=-2$。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] },
+            "decreasing": { "segments": [{ "left": -1, "right": 1 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": -1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": 1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "mx03",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $f(x)=x^{3}-3x$，定义域限制为 $[-2,2]$。请由 $f'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $f(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$f'(x)=3x^{2}-3=3(x-1)(x+1)$，驻点 $x=-1,1$；$f'(x)>0 \\iff x<-1$ 或 $x>1$，$f'(x)<0 \\iff -1<x<1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-2,-1]$ 与 $[1,2]$，减区间 $[-1,1]$。极大值 $f(-1)=2$，极小值 $f(1)=-2$。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] },
+            "decreasing": { "segments": [{ "left": -1, "right": 1 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": -1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": 1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "mx04",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $f(x)=x^{3}-3x$，定义域限制为 $[-2,2]$。请由 $f'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $f(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$f'(x)=3x^{2}-3=3(x-1)(x+1)$，驻点 $x=-1,1$；$f'(x)>0 \\iff x<-1$ 或 $x>1$，$f'(x)<0 \\iff -1<x<1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-2,-1]$ 与 $[1,2]$，减区间 $[-1,1]$。极大值 $f(-1)=2$，极小值 $f(1)=-2$。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] },
+            "decreasing": { "segments": [{ "left": -1, "right": 1 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": -1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": 1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "mx05",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $f(x)=x^{3}-3x$，定义域限制为 $[-2,2]$。请由 $f'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $f(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$f'(x)=3x^{2}-3=3(x-1)(x+1)$，驻点 $x=-1,1$；$f'(x)>0 \\iff x<-1$ 或 $x>1$，$f'(x)<0 \\iff -1<x<1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-2,-1]$ 与 $[1,2]$，减区间 $[-1,1]$。极大值 $f(-1)=2$，极小值 $f(1)=-2$。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] },
+            "decreasing": { "segments": [{ "left": -1, "right": 1 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": -1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": 1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "mx06",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $f(x)=x^{3}-3x$，定义域限制为 $[-2,2]$。请由 $f'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $f(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$f'(x)=3x^{2}-3=3(x-1)(x+1)$，驻点 $x=-1,1$；$f'(x)>0 \\iff x<-1$ 或 $x>1$，$f'(x)<0 \\iff -1<x<1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-2,-1]$ 与 $[1,2]$，减区间 $[-1,1]$。极大值 $f(-1)=2$，极小值 $f(1)=-2$。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] },
+            "decreasing": { "segments": [{ "left": -1, "right": 1 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": -1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": 1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "mx07",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $f(x)=x^{3}-3x$，定义域限制为 $[-2,2]$。请由 $f'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $f(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$f'(x)=3x^{2}-3=3(x-1)(x+1)$，驻点 $x=-1,1$；$f'(x)>0 \\iff x<-1$ 或 $x>1$，$f'(x)<0 \\iff -1<x<1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-2,-1]$ 与 $[1,2]$，减区间 $[-1,1]$。极大值 $f(-1)=2$，极小值 $f(1)=-2$。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] },
+            "decreasing": { "segments": [{ "left": -1, "right": 1 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": -1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": 1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "mx08",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $f(x)=x^{3}-3x$，定义域限制为 $[-2,2]$。请由 $f'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $f(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$f'(x)=3x^{2}-3=3(x-1)(x+1)$，驻点 $x=-1,1$；$f'(x)>0 \\iff x<-1$ 或 $x>1$，$f'(x)<0 \\iff -1<x<1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-2,-1]$ 与 $[1,2]$，减区间 $[-1,1]$。极大值 $f(-1)=2$，极小值 $f(1)=-2$。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] },
+            "decreasing": { "segments": [{ "left": -1, "right": 1 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": -1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": 1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "mx09",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $f(x)=x^{3}-3x$，定义域限制为 $[-2,2]$。请由 $f'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $f(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$f'(x)=3x^{2}-3=3(x-1)(x+1)$，驻点 $x=-1,1$；$f'(x)>0 \\iff x<-1$ 或 $x>1$，$f'(x)<0 \\iff -1<x<1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-2,-1]$ 与 $[1,2]$，减区间 $[-1,1]$。极大值 $f(-1)=2$，极小值 $f(1)=-2$。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] },
+            "decreasing": { "segments": [{ "left": -1, "right": 1 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": -1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": 1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "mx10",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $f(x)=x^{3}-3x$，定义域限制为 $[-2,2]$。请由 $f'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $f(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$f'(x)=3x^{2}-3=3(x-1)(x+1)$，驻点 $x=-1,1$；$f'(x)>0 \\iff x<-1$ 或 $x>1$，$f'(x)<0 \\iff -1<x<1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-2,-1]$ 与 $[1,2]$，减区间 $[-1,1]$。极大值 $f(-1)=2$，极小值 $f(1)=-2$。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] },
+            "decreasing": { "segments": [{ "left": -1, "right": 1 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": -1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": 1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "my01",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $g(x)=-x^{3}+3x$，定义域限制为 $[-2,2]$。请由 $g'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $g(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$g'(x)=-3x^{2}+3=3(1-x)(1+x)$，驻点 $x=-1,1$；$g'(x)>0 \\iff -1<x<1$，$g'(x)<0 \\iff x<-1$ 或 $x>1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-1,1]$，减区间 $[-2,-1]$ 与 $[1,2]$。极大值 $g(1)=2$，极小值 $g(-1)=-2$。本题增减方向与 $f(x)=x^{3}-3x$ 恰好相反。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定（反号对照）",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -1, "right": 1 }] },
+            "decreasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": 1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": -1, "value": -2, "source": "answer" }
+        ]
+      }
+    },
+    {
+      "id": "my02",
+      "subject": "math",
+      "mode": "teach",
+      "difficulty": "中等",
+      "trap": false,
+      "question": "设函数 $g(x)=-x^{3}+3x$，定义域限制为 $[-2,2]$。请由 $g'(x)$ 的符号写出单调递增区间与单调递减区间，并给出极大值、极小值。作答须显式写出「增区间」「减区间」以及 $g(?)=?$ 的配对关系。",
+      "user_answer": null,
+      "provisional_truth": "$g'(x)=-3x^{2}+3=3(1-x)(1+x)$，驻点 $x=-1,1$；$g'(x)>0 \\iff -1<x<1$，$g'(x)<0 \\iff x<-1$ 或 $x>1$。定义域 $[-2,2]$ 端点取闭，故增区间 $[-1,1]$，减区间 $[-2,-1]$ 与 $[1,2]$。极大值 $g(1)=2$，极小值 $g(-1)=-2$。本题增减方向与 $f(x)=x^{3}-3x$ 恰好相反。",
+      "expected_facts": {
+        "schema": 1,
+        "tolerance": 0.05,
+        "assertions": [
+          {
+            "kind": "monotonic_direction",
+            "label": "单调方向绑定（反号对照）",
+            "source": "answer",
+            "strict_brackets": false,
+            "increasing": { "segments": [{ "left": -1, "right": 1 }] },
+            "decreasing": { "segments": [{ "left": -2, "right": -1 }, { "left": 1, "right": 2 }] }
+          },
+          { "kind": "pair", "label": "极大值", "at": 1, "value": 2, "source": "answer" },
+          { "kind": "pair", "label": "极小值", "at": -1, "value": -2, "source": "answer" }
+        ]
+      }
+    }
+  ]
+}
