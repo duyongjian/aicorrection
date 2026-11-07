@@ -49,6 +49,7 @@ import type {
   AuthMeResponse,
   AuthProvider,
   Segment,
+  LicenseTier,
 } from '@aicorrection/shared';
 
 // ----------------- 配置（env 直读，避免改动 env.ts 大块） -----------------
@@ -389,7 +390,7 @@ function lookupMagicEmailByToken(tokenHash: string): string | null {
 // ----------------- 校验 / 状态 / 登出 -----------------
 
 export type VerifyAuthResult =
-  | { ok: true; anonUserId: string; segment: Segment; provider: AuthProvider }
+  | { ok: true; anonUserId: string; segment: Segment; provider: AuthProvider; tier: LicenseTier }
   | { ok: false; reason: 'invalid' | 'expired' };
 
 /** auth token 校验。超 TTL 视为过期（对称于 license 的 expires_at）。 */
@@ -415,11 +416,13 @@ export function verifyAuthToken(token: string | null | undefined): VerifyAuthRes
   if (!Number.isFinite(last) || Date.now() - last > 60_000) {
     touchAuthSession(session.token_hash, new Date().toISOString());
   }
+  // 真实账号默认免费档；订阅升档（subscriptions 表）后续可在此查档位。
   return {
     ok: true,
     anonUserId: session.anon_user_id,
     segment: user.segment as Segment,
     provider: session.provider as AuthProvider,
+    tier: 'free',
   };
 }
 

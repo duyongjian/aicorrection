@@ -135,6 +135,62 @@ export const SMS_CODE_LEN = 6;
 /** dev 模式标记：未配置真实 SMS/Email/WeChat provider 时，验证码/魔法链接直接回显给调用方 */
 export const AUTH_DEV_MODE = !process.env.SMS_PROVIDER && !process.env.EMAIL_PROVIDER;
 
+// ===================== 商业化：卡密即权益层 =====================
+
+/** 订阅档位（卡密携带的权益等级）。free 为默认档。 */
+export const LICENSE_TIERS = ['free', 'pro', 'max'] as const;
+export type LicenseTier = (typeof LICENSE_TIERS)[number];
+
+/** 档位展示名（前端直接展示，避免散落中文串） */
+export const LICENSE_TIER_LABELS: Record<LicenseTier, string> = {
+  free: '免费版',
+  pro: '专业版',
+  max: '旗舰版',
+};
+
+/**
+ * 权益点（功能开关）。核心闭环 core_loop 始终包含；
+ * 进阶能力按档位逐级解锁，前端据此显隐「升级」入口、后端据此做接口级闸门。
+ */
+export const ENTITLEMENTS = [
+  'core_loop',        // 基础五步闭环（上传→归因→判分→复述→追问）
+  'unlimited_loops',  // 无限次闭环（免费版每日有限额 FREE_DAILY_LOOP_QUOTA）
+  'spaced_review',    // 间隔复习（R15/R16）
+  'custom_kp',        // 自定义知识点（R17）
+  'knowledge_graph',  // 知识图谱（R18）
+  'advanced_models',  // 高级解析模型
+  'priority_support', // 优先支持
+] as const;
+export type Entitlement = (typeof ENTITLEMENTS)[number];
+
+/** 各档位权益集合（冻结映射，与发卡时写入 license_keys.entitlements_json 一致） */
+export const TIER_ENTITLEMENTS: Record<LicenseTier, Entitlement[]> = {
+  free: ['core_loop'],
+  pro: ['core_loop', 'unlimited_loops', 'spaced_review', 'custom_kp', 'knowledge_graph'],
+  max: [
+    'core_loop',
+    'unlimited_loops',
+    'spaced_review',
+    'custom_kp',
+    'knowledge_graph',
+    'advanced_models',
+    'priority_support',
+  ],
+};
+
+/** 各档位默认有效期（天），用于发卡/续费默认时长 */
+export const TIER_DEFAULT_DURATION_DAYS: Record<LicenseTier, number> = {
+  free: 30,
+  pro: 365,
+  max: 365,
+};
+
+/** 免费版每日闭环配额（非 unlimited_loops 档时生效） */
+export const FREE_DAILY_LOOP_QUOTA = 5;
+
+/** 支付 provider 未配置时的错误码（与 AUTH_PROVIDER_NOT_CONFIGURED 对称） */
+export const PAYMENT_PROVIDER_ENV = 'PAYMENT_PROVIDER';
+
 // ===================== P1 强化期（R09 错因聚合 / R14 掌握判定） =====================
 
 /**

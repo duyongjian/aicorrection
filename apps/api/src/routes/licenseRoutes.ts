@@ -6,12 +6,20 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import { SEGMENTS, LICENSE_COOKIE_NAME } from '@aicorrection/shared';
+import { SEGMENTS, LICENSE_COOKIE_NAME, LICENSE_TIERS } from '@aicorrection/shared';
 import { env } from '../config/env';
 import { ok } from '../utils/result';
 import { validateBody } from '../middleware/validate';
 import { extractLicenseToken } from '../middleware/requireLicense';
-import { redeemLicense, getLicenseStatus } from '../services/licenseService';
+import {
+  redeemLicense,
+  getLicenseStatus,
+  getLicensePlan,
+  renewLicense,
+  createSubscription,
+  cancelUserSubscription,
+  getSubscriptionView,
+} from '../services/licenseService';
 
 const router = Router();
 
@@ -45,6 +53,72 @@ router.get('/status', (req, res) => {
     res.clearCookie(LICENSE_COOKIE_NAME, { path: UPLOAD_COOKIE_PATH, httpOnly: true, sameSite: 'lax' });
   }
   res.json(ok(status));
+});
+
+/** 当前档位与权益快照（前端显隐功能入口用）。需身份凭证。 */
+router.get('/plan', (req, res) => {
+  res.json(ok(getLicensePlan(extractLicenseToken(req))));
+});
+
+/** 续费：延长有效期（可选升档）。需身份凭证。 */
+router.post(
+  '/renew',
+  validateBody(
+    z.object({
+      license_token: z.string().optional(),
+      code: z.string().optional(),
+      days: z.number().int().min(1).max(3650).optional(),
+      tier: z.enum(LICENSE_TIERS).optional(),
+    })
+  ),
+  (req, res, next) => {
+    try {
+      const anonUserId = (res.locals.identity as { anonUserId?: string } | undefined)?.anonUserId;
+      res.json(ok(renewLicense(req.body, anonUserId)));
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+/** 发起订阅/支付（真实支付 provider 未配置返回 501 NOT_CONFIGURED）。 */
+router.post(
+  '/subscription',
+  validateBody(
+    z.object({
+      anon_user_id: z.string().min(1),
+      tier: z.enum(LICENSE_TIERS),
+      provider: z.enum(['stripe', 'wechat_pay', 'none']).optional(),
+      return_url: z.string().optional(),
+    })
+  ),
+  (req, res, next) => {
+    try {
+      res.json(ok(createSubscription(req.body)));
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+/** 查询当前订阅视图。需身份凭证。 */
+router.get('/subscription', (req, res) => {
+  const anonUserId = (res.locals.identity as { anonUserId?: string } | undefined)?.anonUserId;
+  if (!anonUserId) {
+    res.json(ok(null));
+    return;
+  }
+  res.json(ok(getSubscriptionView(anonUserId)));
+});
+
+/** 取消订阅。需身份凭证。 */
+router.post('/subscription/cancel', (req, res) => {
+  const anonUserId = (res.locals.identity as { anonUserId?: string } | undefined)?.anonUserId;
+  if (!anonUserId) {
+    res.json(ok({ ok: false, message: '未登录' }));
+    return;
+  }
+  res.json(ok(cancelUserSubscription(anonUserId)));
 });
 
 export default router;

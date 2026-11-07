@@ -58,6 +58,12 @@ import type {
   ManualCauseRequest,
   ManualCauseResponse,
   KnowledgeGraphResponse,
+  LicensePlanResponse,
+  LicenseRenewRequest,
+  LicenseRenewResponse,
+  CreateSubscriptionRequest,
+  CreateSubscriptionResponse,
+  SubscriptionView,
 } from '@aicorrection/shared';
 
 /**
@@ -502,5 +508,36 @@ export const api = {
   /** R18 知识图谱：导出该用户的知识点共现图。 */
   getKnowledgeGraph(anonUserId: string): Promise<KnowledgeGraphResponse> {
     return http.get(`/learn/graph?anon_user_id=${encodeURIComponent(anonUserId)}`).then((r) => r.data.data);
+  },
+
+  // ===================== 商业化：权益层 / 订阅 / 续费 =====================
+
+  /** 当前档位与权益快照（前端显隐功能入口用）。 */
+  getLicensePlan(): Promise<LicensePlanResponse> {
+    return http.get('/license/plan').then((r) => r.data.data);
+  },
+
+  /** 续费：延长有效期（可选升档）。 */
+  renewLicense(req: LicenseRenewRequest): Promise<LicenseRenewResponse> {
+    return http.post('/license/renew', req).then((r) => r.data.data);
+  },
+
+  /** 发起订阅/支付（真实支付 provider 未配置返回 501 NOT_CONFIGURED）。 */
+  createSubscription(req: CreateSubscriptionRequest): Promise<CreateSubscriptionResponse> {
+    return http.post('/license/subscription', req).then((r) => r.data.data);
+  },
+
+  /** 查询当前订阅视图。 */
+  getSubscription(anonUserId: string): Promise<SubscriptionView | null> {
+    return http
+      .get(`/license/subscription?anon_user_id=${encodeURIComponent(anonUserId)}`)
+      .then((r) => r.data.data);
+  },
+
+  /** 取消订阅。 */
+  cancelSubscription(anonUserId: string): Promise<{ ok: boolean; message: string }> {
+    return http
+      .post('/license/subscription/cancel', { anon_user_id: anonUserId })
+      .then((r) => r.data.data);
   },
 };

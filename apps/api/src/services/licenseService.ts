@@ -24,13 +24,38 @@ import {
   insertLicenseSession,
   getLicenseSession,
   touchLicenseSession,
+  getLicenseKeyByAnon,
+  type LicenseKeyRow,
+  extendLicenseExpiry,
+  setLicenseTier,
+  setLicenseSessionTierByCode,
+  insertSubscription,
+  getActiveSubscription,
+  cancelSubscription,
+  insertPayment,
+  markPaymentPaid,
 } from '../models/licenseModel';
-import { ERROR_CODES } from '@aicorrection/shared';
+import {
+  ERROR_CODES,
+  LICENSE_TIERS,
+  TIER_ENTITLEMENTS,
+  TIER_DEFAULT_DURATION_DAYS,
+  LICENSE_TIER_LABELS,
+  type LicenseTier,
+  type Entitlement,
+} from '@aicorrection/shared';
 import type {
   LicenseRedeemRequest,
   LicenseRedeemResponse,
   LicenseStatusResponse,
   Segment,
+  LicensePlanResponse,
+  LicenseRenewRequest,
+  LicenseRenewResponse,
+  CreateSubscriptionRequest,
+  CreateSubscriptionResponse,
+  SubscriptionView,
+  PaymentView,
 } from '@aicorrection/shared';
 
 /** 去歧义字母表（去掉 I/L/O/0/1），恰好 32 字符 → 字节取模无偏。 */
@@ -98,11 +123,15 @@ export interface GenerateLicensesOptions {
   batchId?: string;
   note?: string | null;
   expiresAt?: string | null;
+  /** 卡密档位（权益层）；默认 free。 */
+  tier?: LicenseTier;
 }
 
 export interface GeneratedLicense {
   code: string;
   batch_id: string;
+  tier: LicenseTier;
+  entitlements: Entitlement[];
   expires_at: string | null;
   note: string | null;
 }
@@ -128,6 +157,11 @@ export function generateLicenses(opts: GenerateLicensesOptions): GeneratedLicens
     }
     expiresAt = d.toISOString();
   }
+  const tier: LicenseTier = opts.tier && (LICENSE_TIERS as readonly string[]).includes(opts.tier)
+    ? opts.tier
+    : 'free';
+  const entitlements = TIER_ENTITLEMENTS[tier];
+  const entitlementsJson = JSON.stringify(entitlements);
   const batchId = (opts.batchId || `batch-${new Date().toISOString().slice(0, 10)}-${randomUUID().slice(0, 8)}`).trim();
   const note = opts.note ?? null;
   const out: GeneratedLicense[] = [];
@@ -141,10 +175,19 @@ export function generateLicenses(opts: GenerateLicensesOptions): GeneratedLicens
         code_hint: body.slice(-4),
         batch_id: batchId,
         note,
+        tier,
+        entitlements_json: entitlementsJson,
         expires_at: expiresAt,
       };
       if (tryInsertLicenseKey(key)) {
-        return { code: formatCode(body), batch_id: batchId, expires_at: expiresAt, note };
+        return {
+          code: formatCode(body),
+          batch_id: batchId,
+          tier,
+          entitlements,
+          expires_at: expiresAt,
+          note,
+        };
       }
     }
     throw new HttpError(ERROR_CODES.INTERNAL, 500, '卡密生成连续冲突，请重试');
@@ -176,6 +219,7 @@ export function redeemLicense(req: LicenseRedeemRequest): LicenseRedeemResponse 
   }
 
   const segment: Segment = req.segment;
+  const tier = (key.tier as LicenseTier) || 'free';
   const now = new Date().toISOString();
   const token = randomBytes(32).toString('hex');
   const db = getDb();
@@ -190,22 +234,53 @@ export function redeemLicense(req: LicenseRedeemRequest): LicenseRedeemResponse 
       token_hash: hashToken(token),
       anon_user_id: acc.anon_user_id,
       code_hash: codeHash,
+      tier,
     });
     return acc;
   })();
+
+  const entitlements = resolveEntitlements(key.entitlements_json, tier);
 
   return {
     license_token: token,
     anon_user_id: account.anon_user_id,
     segment,
     batch_id: key.batch_id,
+    tier,
+    entitlements,
     expires_at: key.expires_at,
     bound_at: now,
   };
 }
 
+/**
+ * 解析权益列表：优先用卡密发行时冻结的快照（entitlements_json），
+ * 缺失时回退到当前档位映射，保证历史卡密在档位定义演进后权益不漂移。
+ */
+export function resolveEntitlements(snapshotJson: string | null, tier: LicenseTier): Entitlement[] {
+  if (snapshotJson) {
+    try {
+      const parsed = JSON.parse(snapshotJson);
+      if (Array.isArray(parsed)) return parsed as Entitlement[];
+    } catch {
+      /* 快照损坏则回退档位映射 */
+    }
+  }
+  return TIER_ENTITLEMENTS[tier] ?? TIER_ENTITLEMENTS.free;
+}
+
+/** 给定档位返回权益集合（纯函数，便于前端/门禁复用）。 */
+export function getEntitlements(tier: LicenseTier): Entitlement[] {
+  return TIER_ENTITLEMENTS[tier] ?? TIER_ENTITLEMENTS.free;
+}
+
+/** 给定档位是否含某权益。 */
+export function hasEntitlement(tier: LicenseTier, ent: Entitlement): boolean {
+  return getEntitlements(tier).includes(ent);
+}
+
 export type VerifyLicenseResult =
-  | { ok: true; anonUserId: string; segment: Segment; batchId: string; expiresAt: string | null }
+  | { ok: true; anonUserId: string; segment: Segment; batchId: string; expiresAt: string | null; tier: LicenseTier }
   | { ok: false; reason: 'invalid' | 'revoked' | 'expired' };
 
 /** 业务请求凭证校验。每 60s 才更新一次 last_seen_at，避免每个请求都写库。 */
@@ -238,6 +313,7 @@ export function verifyLicenseToken(token: string | null | undefined): VerifyLice
     segment: user.segment as Segment,
     batchId: key.batch_id,
     expiresAt: key.expires_at,
+    tier: (session.tier as LicenseTier) || 'free',
   };
 }
 
@@ -256,7 +332,10 @@ export function getLicenseStatus(token: string | null | undefined): LicenseStatu
     anon_user_id: null,
     segment: null,
     batch_id: null,
+    tier: null,
+    entitlements: [],
     expires_at: null,
+    is_expired: false,
     reason,
   });
 
@@ -267,7 +346,10 @@ export function getLicenseStatus(token: string | null | undefined): LicenseStatu
       anon_user_id: null,
       segment: null,
       batch_id: null,
+      tier: null,
+      entitlements: [],
       expires_at: null,
+      is_expired: false,
     };
   }
   if (!token) return inactive('missing');
@@ -279,7 +361,10 @@ export function getLicenseStatus(token: string | null | undefined): LicenseStatu
     anon_user_id: v.anonUserId,
     segment: v.segment,
     batch_id: v.batchId,
+    tier: v.tier,
+    entitlements: getEntitlements(v.tier),
     expires_at: v.expiresAt,
+    is_expired: v.expiresAt ? new Date(v.expiresAt).getTime() < Date.now() : false,
   };
 }
 
@@ -302,6 +387,7 @@ export interface LicenseListViewItem {
   hint: string;
   batch_id: string;
   status: string;
+  tier: string;
   note: string | null;
   expires_at: string | null;
   anon_user_id: string | null;
@@ -314,10 +400,177 @@ export function listLicenses(batchId?: string): LicenseListViewItem[] {
     hint: `****-${r.code_hint}`,
     batch_id: r.batch_id,
     status: r.status,
+    tier: r.tier,
     note: r.note,
     expires_at: r.expires_at,
     anon_user_id: r.anon_user_id,
     redeemed_at: r.redeemed_at,
     created_at: r.created_at,
   }));
+}
+
+// ===================== 商业化：权益层 / 订阅 / 续费 =====================
+
+/**
+ * 当前档位与权益快照查询（前端显隐功能入口、后端接口级闸门共用）。
+ * 优先从已兑换卡密解析（含发行时冻结的权益快照），无卡密（仅真实账号登录）默认免费档。
+ */
+export function getLicensePlan(token: string | null | undefined): LicensePlanResponse {
+  if (token) {
+    const v = verifyLicenseToken(token);
+    if (v.ok) {
+      const isExpired = v.expiresAt ? new Date(v.expiresAt).getTime() < Date.now() : false;
+      return {
+        tier: v.tier,
+        tier_label: LICENSE_TIER_LABELS[v.tier] ?? v.tier,
+        entitlements: getEntitlements(v.tier),
+        expires_at: v.expiresAt,
+        is_expired: isExpired,
+        can_renew: !isExpired,
+      };
+    }
+  }
+  // 无有效凭证：默认免费档（可走升档/订阅流程）
+  return {
+    tier: 'free',
+    tier_label: LICENSE_TIER_LABELS.free,
+    entitlements: getEntitlements('free'),
+    expires_at: null,
+    is_expired: false,
+    can_renew: true,
+  };
+}
+
+/**
+ * 续费：延长卡密有效期（线下分发场景即「续费」）。
+ * 通过 license_token 或 code 定位卡密；无则按 anon_user_id 查其已兑换卡密。
+ * days 缺省按当前档位默认时长；tier 传入则同时升档（权益快照一并刷新）。
+ */
+export function renewLicense(req: LicenseRenewRequest, anonUserId?: string): LicenseRenewResponse {
+  let target: LicenseKeyRow | undefined;
+  if (req.license_token) {
+    const v = verifyLicenseToken(req.license_token);
+    if (v.ok) target = getLicenseKeyByAnon(v.anonUserId);
+  }
+  if (!target && req.code) {
+    const body = canonicalCode(req.code);
+    if (body) target = getLicenseKey(hashCode(body));
+  }
+  if (!target && anonUserId) target = getLicenseKeyByAnon(anonUserId);
+  if (!target) {
+    throw new HttpError(ERROR_CODES.LICENSE_NOT_FOUND, 404, '未找到可续费的卡密');
+  }
+
+  const currentTier = (target.tier as LicenseTier) || 'free';
+  const newTier: LicenseTier = req.tier && (LICENSE_TIERS as readonly string[]).includes(req.tier)
+    ? req.tier
+    : currentTier;
+
+  const durationDays = req.days && req.days > 0
+    ? req.days
+    : TIER_DEFAULT_DURATION_DAYS[newTier];
+
+  const base = target.expires_at && new Date(target.expires_at).getTime() > Date.now()
+    ? new Date(target.expires_at).getTime()
+    : Date.now();
+  const newExpires = new Date(base + durationDays * 86_400_000).toISOString();
+
+  const db = getDb();
+  db.transaction(() => {
+    extendLicenseExpiry(target!.code_hash, newExpires);
+    if (newTier !== currentTier) {
+      setLicenseTier(target!.code_hash, newTier);
+      setLicenseSessionTierByCode(target!.code_hash, newTier);
+      // 升档时刷新权益快照，使后续兑换/状态查询拿到新档位权益
+      db.prepare('UPDATE license_keys SET entitlements_json = ? WHERE code_hash = ?')
+        .run(JSON.stringify(TIER_ENTITLEMENTS[newTier]), target!.code_hash);
+    }
+  })();
+
+  return {
+    ok: true,
+    tier: newTier,
+    expires_at: newExpires,
+    message: `续费成功，有效期至 ${new Date(newExpires).toLocaleDateString('zh-CN')}${newTier !== currentTier ? `，已升级至${LICENSE_TIER_LABELS[newTier]}` : ''}`,
+  };
+}
+
+/**
+ * 发起订阅/支付。真实支付 provider 未配置时返回 NOT_CONFIGURED（与 wechat auth 对称），
+ * 不写任何支付台账；配置后（STRIPE_SECRET_KEY / WECHAT_PAY_* 等）可创建订阅 + 支付记录并回跳 checkout。
+ */
+export function createSubscription(req: CreateSubscriptionRequest): CreateSubscriptionResponse {
+  const provider = req.provider ?? 'none';
+  const providerConfigured = !!process.env.PAYMENT_PROVIDER;
+  if (!providerConfigured && provider !== 'none') {
+    throw new HttpError(
+      ERROR_CODES.PAYMENT_PROVIDER_NOT_CONFIGURED,
+      501,
+      '支付服务未配置：请设置 PAYMENT_PROVIDER 环境变量（stripe / wechat_pay）后再发起订阅'
+    );
+  }
+
+  const tier: LicenseTier = (LICENSE_TIERS as readonly string[]).includes(req.tier) ? req.tier : 'free';
+  const now = new Date();
+  const periodEnd = new Date(now.getTime() + TIER_DEFAULT_DURATION_DAYS[tier] * 86_400_000);
+  const subId = `sub_${randomBytes(12).toString('hex')}`;
+  const paymentId = `pay_${randomBytes(12).toString('hex')}`;
+
+  const db = getDb();
+  db.transaction(() => {
+    insertSubscription({
+      subscription_id: subId,
+      anon_user_id: req.anon_user_id,
+      provider,
+      provider_sub_id: null,
+      tier,
+      current_period_start: now.toISOString(),
+      current_period_end: periodEnd.toISOString(),
+    });
+    insertPayment({
+      payment_id: paymentId,
+      anon_user_id: req.anon_user_id,
+      provider,
+      amount_cents: 0,
+      currency: 'CNY',
+      tier,
+    });
+  })();
+
+  // 真实 provider 接入点：此处应调用对应 SDK 生成 checkout_url（stub 暂留空）
+  const checkout_url = process.env.PAYMENT_CHECKOUT_BASE
+    ? `${process.env.PAYMENT_CHECKOUT_BASE}?sub=${subId}`
+    : undefined;
+
+  return {
+    ok: true,
+    provider,
+    subscription_id: subId,
+    checkout_url,
+    message: providerConfigured
+      ? '订阅已创建，请完成支付'
+      : '订阅已创建（离线模式，未接入真实支付）',
+  };
+}
+
+/** 查询用户当前有效订阅视图（前端「我的订阅」）。 */
+export function getSubscriptionView(anonUserId: string): SubscriptionView | null {
+  const row = getActiveSubscription(anonUserId);
+  if (!row) return null;
+  return {
+    subscription_id: row.subscription_id,
+    tier: (row.tier as LicenseTier) || 'free',
+    status: row.status as 'active' | 'cancelled' | 'expired',
+    provider: row.provider,
+    current_period_start: row.current_period_start,
+    current_period_end: row.current_period_end,
+  };
+}
+
+/** 取消订阅。 */
+export function cancelUserSubscription(anonUserId: string): { ok: boolean; message: string } {
+  const row = getActiveSubscription(anonUserId);
+  if (!row) return { ok: false, message: '无进行中的订阅' };
+  cancelSubscription(row.subscription_id, new Date().toISOString());
+  return { ok: true, message: `已取消订阅 ${row.subscription_id}` };
 }

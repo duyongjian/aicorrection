@@ -16,8 +16,9 @@ import {
   AUTH_TOKEN_HEADER,
   AUTH_COOKIE_NAME,
 } from '@aicorrection/shared';
-import { isLicenseGateEnabled, verifyLicenseToken } from '../services/licenseService';
+import { isLicenseGateEnabled, verifyLicenseToken, getEntitlements } from '../services/licenseService';
 import { verifyAuthToken } from '../services/authService';
+import type { LicenseTier } from '@aicorrection/shared';
 
 /** 手工解析 Cookie 头（避免为这一处引入 cookie-parser 依赖）。 */
 function readCookie(req: Request, name: string): string | null {
@@ -83,16 +84,17 @@ export function verifyIdentityToken(token: string | null | undefined): {
   ok: true;
   anonUserId: string;
   segment: string;
+  tier: string;
   kind: 'auth' | 'license';
 } | { ok: false; reason: 'invalid' | 'revoked' | 'expired' } {
   if (token) {
     const a = verifyAuthToken(token);
     if (a.ok) {
-      return { ok: true, anonUserId: a.anonUserId, segment: a.segment, kind: 'auth' };
+      return { ok: true, anonUserId: a.anonUserId, segment: a.segment, tier: a.tier, kind: 'auth' };
     }
     const l = verifyLicenseToken(token);
     if (l.ok) {
-      return { ok: true, anonUserId: l.anonUserId, segment: l.segment, kind: 'license' };
+      return { ok: true, anonUserId: l.anonUserId, segment: l.segment, tier: l.tier, kind: 'license' };
     }
     return { ok: false, reason: l.reason === 'revoked' ? 'revoked' : l.reason === 'expired' ? 'expired' : 'invalid' };
   }
@@ -163,6 +165,8 @@ export const requireLicense: RequestHandler = (req, res, next) => {
   res.locals.identity = {
     anonUserId: v.anonUserId,
     segment: v.segment,
+    tier: v.tier,
+    entitlements: getEntitlements(v.tier as LicenseTier),
     kind: v.kind,
   };
   // 兼容字段：license 凭证命中时也保持旧 res.locals.license（暂无业务消费，保留稳妥）。

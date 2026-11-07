@@ -21,6 +21,7 @@ import { api } from '../api/client';
 import {
   CAUSE_TAXONOMY,
   MASTERY_LABELS,
+  LICENSE_TIER_LABELS,
   type MasteryLevel,
   type WeakPointItem,
   type CauseAggregationItem,
@@ -31,6 +32,8 @@ import {
   type CompleteReviewResponse,
   type CustomKpItem,
   type KnowledgeGraphResponse,
+  type LicensePlanResponse,
+  type Entitlement,
 } from '@aicorrection/shared';
 
 interface Props {
@@ -82,18 +85,24 @@ export default function ReinforcePanel({ anonUserId }: Props) {
   const [manualCause, setManualCauseSel] = useState('');
   const [manualMsg, setManualMsg] = useState('');
 
+  // 商业化：当前档位/权益/续费
+  const [plan, setPlan] = useState<LicensePlanResponse | null>(null);
+  const [renewing, setRenewing] = useState(false);
+  const [renewMsg, setRenewMsg] = useState('');
+
   const refresh = useCallback(async () => {
     if (!anonUserId) return;
     setLoading(true);
     setErr('');
     try {
-      const [c, w, m, rev, kps, g] = await Promise.all([
+      const [c, w, m, rev, kps, g, p] = await Promise.all([
         api.getCauseAggregation(anonUserId),
         api.getWeakPoints(anonUserId),
         api.getMastery(anonUserId),
         api.getReviewList(anonUserId),
         api.listCustomKps(anonUserId),
         api.getKnowledgeGraph(anonUserId),
+        api.getLicensePlan(),
       ]);
       setCauses(c.items);
       setWeak(w.items);
@@ -101,12 +110,29 @@ export default function ReinforcePanel({ anonUserId }: Props) {
       setReviews(rev.items);
       setCustomKps(kps.items);
       setGraph(g);
+      setPlan(p);
     } catch (e) {
       setErr((e as Error).message || '加载强化数据失败');
     } finally {
       setLoading(false);
     }
   }, [anonUserId]);
+
+  // 商业化：续费（延长有效期，保持原档位）
+  const doRenew = async () => {
+    setRenewing(true);
+    setRenewMsg('');
+    try {
+      const r = await api.renewLicense({});
+      setRenewMsg(r.message);
+      const p = await api.getLicensePlan();
+      setPlan(p);
+    } catch (e) {
+      setErr((e as Error).message || '续费失败');
+    } finally {
+      setRenewing(false);
+    }
+  };
 
   useEffect(() => {
     refresh();
@@ -252,6 +278,38 @@ export default function ReinforcePanel({ anonUserId }: Props) {
         强化中心
       </Typography>
       {loading && <LinearProgress sx={{ mb: 1 }} />}
+
+      {/* 商业化：当前档位 / 权益 / 续费 */}
+      {plan && (
+        <Paper variant="outlined" sx={{ p: 1.5, mb: 2, bgcolor: 'background.default' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 1, flexWrap: 'wrap' }}>
+            <Box>
+              <Typography variant="subtitle2">
+                我的权益：{plan.tier_label}
+                {plan.is_expired && (
+                  <Chip size="small" color="error" label="已过期" sx={{ ml: 1 }} />
+                )}
+              </Typography>
+              <Typography variant="caption" color="text.secondary">
+                {plan.expires_at
+                  ? `有效期至 ${new Date(plan.expires_at).toLocaleDateString('zh-CN')}`
+                  : '无期限（免费版）'}
+              </Typography>
+            </Box>
+            {plan.tier !== 'max' && (
+              <Button size="small" variant="contained" onClick={doRenew} disabled={renewing || !plan.can_renew}>
+                {renewing ? '续费中…' : '续费 / 升级'}
+              </Button>
+            )}
+          </Box>
+          <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
+            {plan.entitlements.map((e: Entitlement) => (
+              <Chip key={e} size="small" variant="outlined" label={e} />
+            ))}
+          </Box>
+          {renewMsg && <Alert severity="success" sx={{ mt: 1 }}>{renewMsg}</Alert>}
+        </Paper>
+      )}
 
       {/* R09 错因聚合 */}
       <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 1 }}>

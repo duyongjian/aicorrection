@@ -12,6 +12,8 @@ import type {
   AuthProvider,
   MasteryLevel,
   CauseId,
+  LicenseTier,
+  Entitlement,
 } from './constants';
 
 // ===================== 灰度/金丝雀发布（K1.4） =====================
@@ -190,6 +192,10 @@ export const ERROR_CODES = {
   AUTH_TOO_MANY_ATTEMPTS: 5007,
   AUTH_PASSWORD_WEAK: 5008,
   AUTH_PHONE_TAKEN: 5009,
+  // 商业化（订阅/支付）：6xxx 段
+  PAYMENT_PROVIDER_NOT_CONFIGURED: 6001,
+  SUBSCRIPTION_NOT_FOUND: 6002,
+  LICENSE_NOT_FOUND: 6003,
   INTERNAL: 5000,
 } as const;
 
@@ -449,6 +455,8 @@ export interface LicenseRedeemResponse {
   anon_user_id: string;
   segment: Segment;
   batch_id: string | null;
+  tier: LicenseTier;
+  entitlements: Entitlement[];
   expires_at: string | null;
   bound_at: string;
 }
@@ -465,13 +473,84 @@ export interface LicenseStatusResponse {
   anon_user_id: string | null;
   segment: Segment | null;
   batch_id: string | null;
+  tier: LicenseTier | null;
+  entitlements: Entitlement[];
   expires_at: string | null;
+  is_expired: boolean;
   reason?: 'missing' | 'invalid' | 'revoked' | 'expired';
 }
 
 /** 卡密状态枚举（管理端 CLI 与 DB CHECK 约束一致） */
 export const LICENSE_STATUSES = ['unused', 'redeemed', 'revoked'] as const;
 export type LicenseStatus = (typeof LICENSE_STATUSES)[number];
+
+// ===================== 商业化：卡密即权益层 =====================
+
+/** 当前档位与权益快照（前端显隐功能入口、后端接口级闸门共用） */
+export interface LicensePlanResponse {
+  tier: LicenseTier;
+  tier_label: string;
+  entitlements: Entitlement[];
+  expires_at: string | null;
+  is_expired: boolean;
+  /** 无卡密/未激活用户（如仅用真实账号登录者）默认免费档，可走升档流程 */
+  can_renew: boolean;
+}
+
+/** 续费请求：线下场景靠 license_token 或 code 定位卡密并延长有效期 */
+export interface LicenseRenewRequest {
+  license_token?: string;
+  code?: string;
+  /** 延长天数；不传则按当前档位默认时长（TIER_DEFAULT_DURATION_DAYS） */
+  days?: number;
+  /** 续费后是否升档；不传则保持原档位 */
+  tier?: LicenseTier;
+}
+
+export interface LicenseRenewResponse {
+  ok: boolean;
+  tier: LicenseTier;
+  expires_at: string | null;
+  message: string;
+}
+
+/** 发起订阅/支付（线上支付 provider 未配置时返回 PAYMENT_PROVIDER_NOT_CONFIGURED） */
+export interface CreateSubscriptionRequest {
+  anon_user_id: string;
+  tier: LicenseTier;
+  provider?: 'stripe' | 'wechat_pay' | 'none';
+  return_url?: string;
+}
+
+export interface CreateSubscriptionResponse {
+  ok: boolean;
+  provider: 'stripe' | 'wechat_pay' | 'none';
+  subscription_id?: string;
+  checkout_url?: string;
+  message: string;
+}
+
+/** 订阅视图（管理端/前端「我的订阅」） */
+export interface SubscriptionView {
+  subscription_id: string;
+  tier: LicenseTier;
+  status: 'active' | 'cancelled' | 'expired';
+  provider: string;
+  current_period_start: string;
+  current_period_end: string;
+}
+
+/** 支付台账视图 */
+export interface PaymentView {
+  payment_id: string;
+  provider: string;
+  amount_cents: number;
+  currency: string;
+  tier: LicenseTier;
+  status: 'pending' | 'paid' | 'failed';
+  created_at: string;
+  paid_at: string | null;
+}
 
 /**
  * 尝试级上传失败诊断。与 G1/M5 的关系：

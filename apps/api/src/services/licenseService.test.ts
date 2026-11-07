@@ -37,12 +37,15 @@ const {
   redeemLicense,
   verifyLicenseToken,
   getLicenseStatus,
+  getLicensePlan,
+  renewLicense,
+  createSubscription,
   revokeLicense,
   listLicenses,
 } = await import('./licenseService');
 const { getDb, __resetDbSingleton } = await import('../db');
 const { HttpError } = await import('../middleware/errorHandler');
-const { ERROR_CODES } = await import('@aicorrection/shared');
+const { ERROR_CODES, LICENSE_TIERS, TIER_ENTITLEMENTS } = await import('@aicorrection/shared');
 
 type HttpErr = InstanceType<typeof HttpError>;
 type Card = ReturnType<typeof generateLicenses>[number];
@@ -523,4 +526,124 @@ test('redeemLicense：格式非法(400) 与 格式合法但不存在(404) 均抛
 test('revokeLicense：非法格式 / 不存在的卡返回 ok:false', () => {
   assert.equal(revokeLicense('AC-ABCD-EFGH-JKMI').ok, false, '非法格式');
   assert.equal(revokeLicense('AC-ABCD-EFGH-JKMN').ok, false, '格式合法但不存在');
+});
+
+// ===================== 商业化：卡密即权益层 =====================
+
+test('发卡默认免费档；redeem 响应带回 tier=free 与 core_loop 权益', () => {
+  setGate('true');
+  const card = issueOne('batch-com-free');
+  const res = redeemLicense({ code: card.code, segment: 'kaoyan' });
+  assert.equal(res.tier, 'free', '未指定 tier 默认 free');
+  assert.deepEqual(res.entitlements, TIER_ENTITLEMENTS.free, '免费档权益=core_loop');
+  assert.ok(res.entitlements.includes('core_loop'));
+});
+
+test('pro 档卡密：redeem 返回 tier=pro 且含 spaced_review/custom_kp 等进阶权益', () => {
+  setGate('true');
+  const [card] = generateLicenses({ count: 1, batchId: 'batch-com-pro', tier: 'pro' });
+  assert.ok(card, 'pro 卡应生成');
+  const res = redeemLicense({ code: card.code, segment: 'kaoyan' });
+  assert.equal(res.tier, 'pro');
+  for (const ent of ['core_loop', 'unlimited_loops', 'spaced_review', 'custom_kp', 'knowledge_graph']) {
+    assert.ok(res.entitlements.includes(ent as never), `pro 应含权益 ${ent}`);
+  }
+  // verify 后 tier 透传
+  const v = verifyLicenseToken(res.license_token);
+  assert.equal(v.ok, true);
+  if (v.ok) assert.equal(v.tier, 'pro');
+});
+
+test('getLicenseStatus（门禁开启）：携带 tier / entitlements / is_expired', () => {
+  setGate('true');
+  const [card] = generateLicenses({ count: 1, batchId: 'batch-com-status', tier: 'max' });
+  const res = redeemLicense({ code: card.code, segment: 'kaoyan' });
+  const s = getLicenseStatus(res.license_token);
+  assert.equal(s.active, true);
+  assert.equal(s.tier, 'max');
+  assert.deepEqual(s.entitlements, TIER_ENTITLEMENTS.max);
+  assert.equal(s.is_expired, false);
+});
+
+test('getLicensePlan：有效 pro 凭证返回 pro 档计划；无凭证返回免费默认档', () => {
+  setGate('true');
+  const [card] = generateLicenses({ count: 1, batchId: 'batch-com-plan', tier: 'pro' });
+  const res = redeemLicense({ code: card.code, segment: 'kaoyan' });
+  const plan = getLicensePlan(res.license_token);
+  assert.equal(plan.tier, 'pro');
+  assert.equal(plan.tier_label, '专业版');
+  assert.equal(plan.entitlements.includes('spaced_review' as never), true);
+  assert.equal(plan.can_renew, true);
+  // 无凭证 → 免费默认档
+  const def = getLicensePlan(null);
+  assert.equal(def.tier, 'free');
+  assert.equal(def.entitlements.includes('core_loop' as never), true);
+});
+
+test('renewLicense：延长有效期（默认按档位时长），is_expired 随之更新', () => {
+  setGate('true');
+  // pro 默认 365 天；发一张 1 天后过期，续费（不传 days）应延长到 约 366 天后
+  const future = new Date(Date.now() + 86_400_000).toISOString();
+  const [card] = generateLicenses({ count: 1, batchId: 'batch-com-renew', tier: 'pro', expiresAt: future });
+  const res = redeemLicense({ code: card.code, segment: 'kaoyan' });
+  // 先让 status 显示未过期
+  assert.equal(getLicensePlan(res.license_token).is_expired, false);
+  const r = renewLicense({ license_token: res.license_token });
+  assert.equal(r.ok, true);
+  assert.ok(r.expires_at, '应返回新有效期');
+  const newExpires = new Date(r.expires_at as string).getTime();
+  // 原 future(~1天) + 默认365天 ≈ 366天后；允许 ±2天误差
+  const expected = new Date(future).getTime() + 365 * 86_400_000;
+  assert.ok(Math.abs(newExpires - expected) < 2 * 86_400_000, '续费后有效期≈原到期+档位默认时长');
+  // 续费升档：pro→max
+  const up = renewLicense({ license_token: res.license_token, tier: 'max' });
+  assert.equal(up.tier, 'max');
+  assert.equal(getLicensePlan(res.license_token).tier, 'max', '升档后查询应为 max');
+});
+
+test('renewLicense：无卡密定位抛 LICENSE_NOT_FOUND', () => {
+  expectHttpError(
+    () => renewLicense({}),
+    ERROR_CODES.LICENSE_NOT_FOUND,
+    '无任何可续费卡密',
+    404
+  );
+});
+
+test('createSubscription：未配置真实支付 provider 抛 PAYMENT_PROVIDER_NOT_CONFIGURED(501)', () => {
+  delete process.env.PAYMENT_PROVIDER;
+  expectHttpError(
+    () => createSubscription({ anon_user_id: 'u-sub-1', tier: 'pro', provider: 'stripe' }),
+    ERROR_CODES.PAYMENT_PROVIDER_NOT_CONFIGURED,
+    '未配置支付 provider',
+    501
+  );
+});
+
+test('createSubscription：provider=none（离线）成功创建订阅+支付台账', () => {
+  delete process.env.PAYMENT_PROVIDER;
+  // subscriptions/payments 外键引用 users，单测需先落一个用户行
+  getDb()
+    .prepare("INSERT OR IGNORE INTO users (anon_user_id, segment, register_ts) VALUES (?, 'kaoyan', datetime('now'))")
+    .run('u-sub-2');
+  const r = createSubscription({ anon_user_id: 'u-sub-2', tier: 'pro', provider: 'none' });
+  assert.equal(r.ok, true, '离线模式应创建成功');
+  assert.equal(r.provider, 'none');
+  // 台账应落库
+  const rows = getDb()
+    .prepare('SELECT * FROM subscriptions WHERE anon_user_id = ?')
+    .all('u-sub-2') as Array<{ tier: string; status: string }>;
+  assert.equal(rows.length, 1, '应写入一条订阅');
+  assert.equal(rows[0].tier, 'pro');
+  assert.equal(rows[0].status, 'active');
+  const pays = getDb()
+    .prepare('SELECT COUNT(*) AS n FROM payments WHERE anon_user_id = ?')
+    .get('u-sub-2') as { n: number };
+  assert.equal(pays.n, 1, '应写入一条支付台账');
+});
+
+test('LICENSE_TIERS / TIER_ENTITLEMENTS 冻结映射自洽：free⊂pro⊂max', () => {
+  assert.ok(LICENSE_TIERS.includes('free' as never));
+  assert.ok(TIER_ENTITLEMENTS.free.every((e) => TIER_ENTITLEMENTS.pro.includes(e)), 'free 权益 ⊆ pro');
+  assert.ok(TIER_ENTITLEMENTS.pro.every((e) => TIER_ENTITLEMENTS.max.includes(e)), 'pro 权益 ⊆ max');
 });
