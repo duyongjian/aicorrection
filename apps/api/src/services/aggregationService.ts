@@ -18,6 +18,7 @@ import {
   getPracticeKp,
   getPracticeByKp,
 } from '../models/aggregationModel';
+import { scheduleReview } from './reviewScheduleService';
 import { CAUSE_TAXONOMY, MASTERY_LABELS, type MasteryLevel } from '@aicorrection/shared';
 import type {
   CauseAggregationResponse,
@@ -177,7 +178,16 @@ export function recomputeMastery(
 export function refreshMasteryForPractice(practice_id: string): MasteryState | null {
   const pk = getPracticeKp(practice_id);
   if (!pk || !pk.kp_id) return null;
-  return recomputeMastery(pk.anon_user_id, pk.kp_id, pk.kp_id);
+  const state = recomputeMastery(pk.anon_user_id, pk.kp_id, pk.kp_id);
+  // R15：掌握度升到 familiar/mastered 时，自动排程一次间隔复习（已排程则不重置）
+  if (state.level === 'familiar' || state.level === 'mastered') {
+    try {
+      scheduleReview(pk.anon_user_id, pk.kp_id, pk.kp_id);
+    } catch {
+      /* 复习排程为增强指标，异常不阻断判分主流程 */
+    }
+  }
+  return state;
 }
 
 /** 重算并返回某用户全部知识点的掌握状态。 */

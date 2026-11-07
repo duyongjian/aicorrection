@@ -707,3 +707,101 @@ export interface GenerateGroupResponse {
   target_kp: string;
   items: GenerateGroupItem[];
 }
+
+// ===================== P2 规模化期（R15 间隔复习 / R16 复习列表 / R12 变式题 / R17 自定义知识点 / R20 手动错因 / R18 知识图谱） =====================
+
+/** R15/R16 复习计划（每个用户-知识点一条）。 */
+export interface ReviewScheduleItem {
+  anon_user_id: string;
+  kp_key: string;
+  kp_text: string | null;
+  interval_days: number;
+  ease: number;
+  last_result: 'correct' | 'wrong' | 'skip' | null;
+  next_review_ts: string | null;
+  /** 是否已到期（next_review_ts <= now 或尚未排程），由 R16 列表接口填充。 */
+  is_due?: boolean;
+}
+
+export interface DueReviewResponse {
+  anon_user_id: string;
+  items: ReviewScheduleItem[];
+}
+
+/** R12/R15：发起一次复测（返回变式题，避免"原题测记忆"）。 */
+export interface StartReviewResponse {
+  review_id: string;
+  kp_key: string;
+  kp_text: string | null;
+  question_text: string;
+  is_variant: 1 | 0;
+  source: 'variant' | 'generic';
+}
+
+export interface CompleteReviewResponse {
+  review_id: string;
+  retest_result: 'correct' | 'wrong' | 'skip';
+  next_review_ts: string | null;
+  interval_days: number;
+}
+
+/** R17 自定义知识点。 */
+export interface CustomKpItem {
+  kp_id: string;
+  anon_user_id: string;
+  kp_text: string;
+  parent_kp_key: string | null;
+  created_at: string;
+}
+
+export interface CustomKpListResponse {
+  anon_user_id: string;
+  items: CustomKpItem[];
+}
+
+export interface CreateCustomKpRequest {
+  anon_user_id: string;
+  kp_text: string;
+  parent_kp_key?: string | null;
+}
+
+export interface CreateCustomKpResponse {
+  kp_id: string;
+  kp_text: string;
+  parent_kp_key: string | null;
+}
+
+/** R20 手动错因标记：用户覆盖 AI 的 cause / knowledge_point。 */
+export interface ManualCauseRequest {
+  loop_id: string;
+  anon_user_id: string;
+  cause_id?: string | null;
+  knowledge_point?: string | null;
+  knowledge_point_id?: string | null;
+}
+
+export interface ManualCauseResponse {
+  loop_id: string;
+  cause_id: string | null;
+  knowledge_point: string | null;
+  knowledge_point_id: string | null;
+}
+
+/** R18 知识图谱：kp 节点 + 共现边。 */
+export interface KnowledgeGraphNode {
+  kp_key: string;
+  kp_text: string;
+  error_count: number;
+}
+
+export interface KnowledgeGraphEdge {
+  source: string;
+  target: string;
+  weight: number;
+}
+
+export interface KnowledgeGraphResponse {
+  anon_user_id: string;
+  nodes: KnowledgeGraphNode[];
+  edges: KnowledgeGraphEdge[];
+}

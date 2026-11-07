@@ -134,3 +134,41 @@ export function getPendingReviews(
        FROM attributions ORDER BY created_at DESC LIMIT ?`;
   return getDb().prepare(sql).all(limit) as ReviewPendingItem[];
 }
+
+/** R20 手动错因：用户覆盖某条归因的 cause_id / knowledge_point_id（用户侧的"让我自己定"）。 */
+export function patchAttributionCause(
+  loop_id: string,
+  anon_user_id: string,
+  cause_id: string | null,
+  knowledge_point_id: string | null
+): { found: boolean } {
+  const info = getDb()
+    .prepare(
+      `UPDATE attributions SET cause_id = ?, knowledge_point_id = ?
+       WHERE loop_id = ? AND anon_user_id = ?`
+    )
+    .run(cause_id, knowledge_point_id, loop_id, anon_user_id);
+  return { found: info.changes > 0 };
+}
+
+/** R20：校验归属，避免越权改写他人归因。 */
+export function getAttributionByLoopForUser(
+  loop_id: string,
+  anon_user_id: string
+): Attribution | undefined {
+  return getDb()
+    .prepare('SELECT * FROM attributions WHERE loop_id = ? AND anon_user_id = ? LIMIT 1')
+    .get(loop_id, anon_user_id) as Attribution | undefined;
+}
+
+/** R18 知识图谱数据源：该用户全部（kp_key, cause_id）对（仅取有 kp 归属的归因）。 */
+export function getAttributionsKpCause(
+  anon_user_id: string
+): Array<{ knowledge_point_id: string | null; cause_id: string | null }> {
+  return getDb()
+    .prepare(
+      `SELECT knowledge_point_id, cause_id FROM attributions
+       WHERE anon_user_id = ? AND knowledge_point_id IS NOT NULL`
+    )
+    .all(anon_user_id) as Array<{ knowledge_point_id: string | null; cause_id: string | null }>;
+}

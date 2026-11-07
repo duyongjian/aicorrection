@@ -22,6 +22,17 @@ import {
   refreshAllMastery,
   getMasteryState,
 } from '../services/aggregationService';
+import {
+  getDueReviewsList,
+  createReview,
+  completeReview,
+} from '../services/reviewScheduleService';
+import {
+  createCustomKp,
+  listCustomKps,
+  setManualCause,
+  getKnowledgeGraph,
+} from '../services/knowledgeService';
 import { ERROR_CODES } from '@aicorrection/shared';
 import { HttpError } from '../middleware/errorHandler';
 
@@ -180,5 +191,131 @@ router.post(
     }
   }
 );
+
+// ===================== P2 间隔复习（R15/R16 复习列表 + R12 变式题） =====================
+
+/** R16 复习列表：该用户全部复习计划（含 is_due 标记）。 */
+router.get('/review/due', (req, res, next) => {
+  try {
+    const anon_user_id = requireAnonUserId(req);
+    res.json(ok(getDueReviewsList(anon_user_id)));
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** R15 发起一次复测：返回变式题（is_variant=1）。 */
+router.post(
+  '/review/start',
+  validateBody(
+    z.object({
+      anon_user_id: z.string().min(1),
+      kp_key: z.string().min(1),
+      kp_text: z.string().nullable().optional(),
+      source_loop_id: z.string().nullable().optional(),
+    })
+  ),
+  (req, res, next) => {
+    try {
+      const r = createReview(
+        req.body.anon_user_id,
+        req.body.kp_key,
+        req.body.kp_text ?? null,
+        req.body.source_loop_id ?? null
+      );
+      res.json(ok(r));
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+/** R15 完成复测：写回流结果并刷新复习间隔。 */
+router.post(
+  '/review/complete',
+  validateBody(
+    z.object({
+      review_id: z.string().min(1),
+      retest_result: z.enum(['correct', 'wrong', 'skip']),
+    })
+  ),
+  (req, res, next) => {
+    try {
+      const r = completeReview(req.body.review_id, req.body.retest_result);
+      res.json(ok(r));
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+// ===================== P2 自定义知识点 / 手动错因 / 知识图谱（R17/R20/R18） =====================
+
+/** R17 自定义知识点：新增（kp_id 自动以 ckp_ 前缀生成）。 */
+router.post(
+  '/custom-kp',
+  validateBody(
+    z.object({
+      anon_user_id: z.string().min(1),
+      kp_text: z.string().min(1),
+      parent_kp_key: z.string().nullable().optional(),
+    })
+  ),
+  (req, res, next) => {
+    try {
+      const r = createCustomKp(req.body);
+      res.json(ok(r));
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+/** R17 自定义知识点：列出该用户的全部自定义知识点。 */
+router.get('/custom-kp', (req, res, next) => {
+  try {
+    const anon_user_id = requireAnonUserId(req);
+    res.json(ok(listCustomKps(anon_user_id)));
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** R20 手动错因：覆盖 AI 判定的 cause / knowledge_point。 */
+router.patch(
+  '/attribution/:loop_id/cause',
+  validateBody(
+    z.object({
+      anon_user_id: z.string().min(1),
+      cause_id: z.string().nullable().optional(),
+      knowledge_point: z.string().nullable().optional(),
+      knowledge_point_id: z.string().nullable().optional(),
+    })
+  ),
+  (req, res, next) => {
+    try {
+      const r = setManualCause({
+        loop_id: req.params.loop_id,
+        anon_user_id: req.body.anon_user_id,
+        cause_id: req.body.cause_id,
+        knowledge_point: req.body.knowledge_point,
+        knowledge_point_id: req.body.knowledge_point_id,
+      });
+      res.json(ok(r));
+    } catch (e) {
+      next(e);
+    }
+  }
+);
+
+/** R18 知识图谱：导出该用户的知识点共现图（节点 + 边）。 */
+router.get('/graph', (req, res, next) => {
+  try {
+    const anon_user_id = requireAnonUserId(req);
+    res.json(ok(getKnowledgeGraph(anon_user_id)));
+  } catch (e) {
+    next(e);
+  }
+});
 
 export default router;

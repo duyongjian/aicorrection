@@ -49,6 +49,15 @@ import type {
   SedimentRequest,
   SedimentResponse,
   GenerateGroupResponse,
+  DueReviewResponse,
+  StartReviewResponse,
+  CompleteReviewResponse,
+  CreateCustomKpRequest,
+  CreateCustomKpResponse,
+  CustomKpListResponse,
+  ManualCauseRequest,
+  ManualCauseResponse,
+  KnowledgeGraphResponse,
 } from '@aicorrection/shared';
 
 /**
@@ -451,5 +460,47 @@ export const api = {
     kp_key?: string | null;
   }): Promise<GenerateGroupResponse> {
     return http.post('/learn/practice/generate-group', req).then((r) => r.data.data);
+  },
+
+  // ===================== P2 规模化期（R15 间隔复习 / R16 复习列表 / R12 变式题 / R17 自定义知识点 / R20 手动错因 / R18 知识图谱） =====================
+
+  /** R16 复习列表：该用户全部复习计划（含 is_due 标记）。 */
+  getReviewList(anonUserId: string): Promise<DueReviewResponse> {
+    return http.get(`/learn/review/due?anon_user_id=${encodeURIComponent(anonUserId)}`).then((r) => r.data.data);
+  },
+
+  /** R15/R12 发起一次复测（返回变式题）。 */
+  startReview(req: {
+    anon_user_id: string;
+    kp_key: string;
+    kp_text?: string | null;
+    source_loop_id?: string | null;
+  }): Promise<StartReviewResponse> {
+    return http.post('/learn/review/start', req).then((r) => r.data.data);
+  },
+
+  /** R15 完成复测：写回流结果并刷新复习间隔。 */
+  completeReview(req: { review_id: string; retest_result: 'correct' | 'wrong' | 'skip' }): Promise<CompleteReviewResponse> {
+    return http.post('/learn/review/complete', req).then((r) => r.data.data);
+  },
+
+  /** R17 自定义知识点：新增。 */
+  createCustomKp(req: CreateCustomKpRequest): Promise<CreateCustomKpResponse> {
+    return http.post('/learn/custom-kp', req).then((r) => r.data.data);
+  },
+
+  /** R17 自定义知识点：列出该用户全部。 */
+  listCustomKps(anonUserId: string): Promise<CustomKpListResponse> {
+    return http.get(`/learn/custom-kp?anon_user_id=${encodeURIComponent(anonUserId)}`).then((r) => r.data.data);
+  },
+
+  /** R20 手动错因：覆盖 AI 判定的 cause / knowledge_point。 */
+  setManualCause(req: ManualCauseRequest): Promise<ManualCauseResponse> {
+    return http.patch(`/learn/attribution/${encodeURIComponent(req.loop_id)}/cause`, req).then((r) => r.data.data);
+  },
+
+  /** R18 知识图谱：导出该用户的知识点共现图。 */
+  getKnowledgeGraph(anonUserId: string): Promise<KnowledgeGraphResponse> {
+    return http.get(`/learn/graph?anon_user_id=${encodeURIComponent(anonUserId)}`).then((r) => r.data.data);
   },
 };
