@@ -147,8 +147,12 @@ test('summarizeQuality 汇总比例、未标定计数与人工待评状态', () 
   assert.equal(s.review_queue_size, 3);
   assert.equal(s.human_only.status, 'PENDING_HUMAN_BLIND_REVIEW');
   assert.equal(s.human_only.values, null);
-  assert.match(s.proxy_caveat, /已完成两路「词表检出能力」校准/);
-  assert.match(s.proxy_caveat, /只证明检出能力，不证明质量相关性/);
+  // 口径诚实性不变量（8283f96「非自证」措辞不实的回归护栏）：
+  // 构造样本必须承认循环论证、不得包装成非自证；量尺不得据代理量给出质量结论。
+  assert.match(s.proxy_caveat, /承认循环论证/);
+  assert.match(s.proxy_caveat, /不得称为「非自证」/);
+  assert.doesNotMatch(s.proxy_caveat, /不照词表写的|非自证构造样本/);
+  assert.match(s.proxy_caveat, /不证明真实语料无误检/);
   assert.match(s.proxy_caveat, /命中 ≠ 质量达标/);
   assert.match(s.proxy_caveat, /本模块不提供质量结论/);
   assert.match(s.disclaimer, /不得据本汇总推断 M1/);
@@ -259,7 +263,7 @@ test('resolveExpectedCause 优先显式字段、陷阱题不回退猜测、否�
   assert.equal(resolveExpectedCause({ expected_cause: '   ' }), null);
 });
 
-test('第二轮词表校准：非自证样本不再漏检，且口径哨兵仍正确拒绝', () => {
+test('第二轮词表校准：构造样本（承认循环论证）不再漏检，且口径哨兵仍正确拒绝', () => {
   const diagWith = (cause, text) => diag({
     text: text || `错因：${cause}\n知识点：x\n本质：y`,
     fields: { cause, knowledge_point: 'x', essence: 'y', hasThree: true },
@@ -303,4 +307,76 @@ test('evaluateQualitySignals 用 resolveExpectedCause 填入展示字段', () =>
   const st = evaluateQualitySignals({ mode: 'diagnose', case_id: 'qm11', text: '', fields: { hasThree: true } }, trap);
   assert.equal(st.trap, true);
   assert.equal(st.expected_cause, null);
+});
+
+// ── 以下两条为词表校准任务（D）补充：仅断言「结构信号能否被检出」，非质量分 ──
+
+test('expected_cause 三分支（经 evaluateQualitySignals 接线视角）', () => {
+  const r = diag();
+  // 显式字段优先：即使 provisional_truth 没有「错因：」前缀也能取到（修复 qm01 类缺口）
+  assert.equal(
+    evaluateQualitySignals(r, {
+      expected_cause: '把乘积求导法则记反了，漏掉交叉项',
+      provisional_truth: '没有「错因：」前缀的真值文本',
+    }).expected_cause,
+    '把乘积求导法则记反了，漏掉交叉项',
+  );
+  // 显式字段优先于 truth 里的「错因：」片段
+  assert.equal(
+    evaluateQualitySignals(r, {
+      expected_cause: '显式声明的错因',
+      provisional_truth: '错因：来自真值片段，不应被优先采用。',
+    }).expected_cause,
+    '显式声明的错因',
+  );
+  // 陷阱题 not_applicable_trap：直接 null，truth 含「错因：」也不得回退猜测
+  assert.equal(
+    evaluateQualitySignals(r, {
+      expected_cause: null,
+      expected_cause_status: 'not_applicable_trap',
+      provisional_truth: '错因：陷阱题里这句绝不能被抽出来。',
+    }).expected_cause,
+    null,
+  );
+  // 回退：无显式字段、非陷阱 → extractExpectedCause(provisional_truth)
+  assert.equal(
+    evaluateQualitySignals(r, {
+      provisional_truth: '正确答案为 1/2。错因：对相减的分子不能直接代换。应展开到足够阶。',
+    }).expected_cause,
+    '对相减的分子不能直接代换',
+  );
+  // 仍无则 null
+  assert.equal(
+    evaluateQualitySignals(r, { provisional_truth: '只有解答，没有错因前缀。' }).expected_cause,
+    null,
+  );
+});
+
+test('校准后 6 个词表类：代表性边界样本各 1 正 1 负（结构信号，非质量分）', () => {
+  // essence 置空，使 actionNarrative 与 narrative 一致，隔离字段口径干扰；
+  // 正/负样本取自 quality-proxy-calibration.mjs 的构造样本（承认循环论证，仅作回归护栏）
+  const withCause = (cause, text) => ({
+    ...diag(),
+    text: text !== undefined ? text : `错因：${cause}\n知识点：x\n本质：y`,
+    fields: { cause, knowledge_point: 'x', essence: '', hasThree: true },
+  });
+  const check = (key, pos, neg) => {
+    assert.equal(evaluateQualitySignals(withCause(pos), {})[key], true, `${key} 正样本应命中：${pos}`);
+    assert.equal(evaluateQualitySignals(withCause(neg), {})[key], false, `${key} 负样本不应命中：${neg}`);
+  };
+  // 负样本刻意选「近似但不含该信号」或专门哨兵，验证词表未放宽到恒真
+  check('cause_has_empty_label', '疏忽大意', '误把 uv 撇 当成乘积求导法则');
+  check('cause_has_mechanism', '把有序样本当无序组合计数', '基础不牢');
+  check('actionable_hint', '应当保留换元产生的 1/2 系数', '正确答案为 1/6');
+  check('explains_why', '其理由是变化率与当前值成正比', '先通分，再约分，得到 -1/6。');
+  check('transfer_hint', '凡是含常数项的递推都可这样平移构造', '本题答案为 -1/6。');
+  // structured_ids_present 看 result.text：camelCase 应命中、含 id 子串的普通词不得命中
+  assert.equal(
+    evaluateQualitySignals(withCause('正确', '{"kqId":"math.limit.taylor"}'), {}).structured_ids_present,
+    true,
+  );
+  assert.equal(
+    evaluateQualitySignals(withCause('正确', '{"valid": true, "guide": "review"}'), {}).structured_ids_present,
+    false,
+  );
 });

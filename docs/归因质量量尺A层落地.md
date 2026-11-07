@@ -4,6 +4,7 @@
 > 关联：`docs/K1.3_盲评作业指引.md`、`docs/k1.5-G1闸门报告框架.md` §491、
 > `错题强化闭环_PRD_详细需求文档.md` §1.2 / R02、`错题强化闭环_全生命周期KPI与商业化指标模型.md` §0.3 / §6.3.1
 > 基线产物：`reports/quality-baseline-2026-11-07T07-03-13.json` / `.md`（`reports/` 在 gitignore，不随仓库提交）
+> **量尺版本提示（后补）**：上述产物是 `ca2c5a8` 当时的口径快照。此后量尺历经 `2026-11-07-essence-scope-fix`、`2026-11-07-wordlist-v2`、`2026-11-07-wordlist-v2.1` 三次变更，见 `docs/归因质量量尺B层_词表校准与深度候选AB.md`；**跨版本代理量数字不可直接比较**。`scripts/quality-baseline.mjs` 会重新调用 `evaluateQualitySignals`，重跑即按当前词表重算，产物已带 `rubric_scope` 字段，引用时务必核对。本文 §4 的数字保持历史快照原样，不回填新口径。
 
 ---
 

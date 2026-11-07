@@ -18,6 +18,7 @@ import {
   buildReviewQueue,
   HUMAN_ONLY_DIMENSIONS,
   DEPTH_LEVELS,
+  RUBRIC_SCOPE,
 } from '../apps/api/src/tests/quality-rubric.mjs';
 
 const ROOT = path.resolve(process.cwd());
@@ -141,14 +142,19 @@ const outMd = path.join(ROOT, 'reports', `quality-baseline-${ts}.md`);
 const payload = {
   generated_at: new Date().toISOString(),
   schema: 1,
-  scope: 'A 层：归因质量量尺落地后的首次基线',
+  scope: 'A 层：归因质量量尺落地后的首次基线（结构代理量，按当前量尺口径重算）',
+  rubric_scope: RUBRIC_SCOPE,
+  rubric_scope_note:
+    '本脚本会重新调用 evaluateQualitySignals，词表一改数字即变；跨版本数字不可直接比较，差异来自量尺而非模型行为。',
   discipline: {
     machine_only_proxies: true,
     human_only_dimensions: [...HUMAN_ONLY_DIMENSIONS],
     human_only_values: null,
     depth_levels: { ...DEPTH_LEVELS },
     proxy_caveat:
-      '代理量由固定词表命中得出、灵敏度未校准：命中 ≠ 质量达标，未命中 ≠ 质量差；不得据本基线推断 M1 认可率 / M6 盲评准确率。',
+      '代理量由固定词表命中得出；词表「检出能力」已在构造样本上校准（该样本承认循环论证）' +
+      '并经真实语料误检探针复核，但「该结构能否预测归因质量」的相关性仍未校准：' +
+      '命中 ≠ 质量达标，未命中 ≠ 质量差；不得据本基线推断 M1 认可率 / M6 盲评准确率。',
     gate_impact: '不参与 auto-eval 的 PASS/PARTIAL/FAIL 判定，不改变 attrib:regress 门禁结果。',
   },
   human_review: {
@@ -168,8 +174,9 @@ const md = [];
 md.push('# 归因质量基线 · A 层落地');
 md.push(`\n生成时间：${payload.generated_at}`);
 md.push(`\n范围：${payload.scope}`);
+md.push(`\n量尺口径：\`${payload.rubric_scope}\` —— ${payload.rubric_scope_note}`);
 md.push('\n> ⚠️ **口径纪律**：本报告只含**结构代理量**（词表命中），不是质量分。');
-md.push('> 命中 ≠ 质量达标，未命中 ≠ 质量差（灵敏度未校准）；');
+md.push('> 命中 ≠ 质量达标，未命中 ≠ 质量差（词表检出能力已校准，但代理量与质量的相关性未校准）；');
 md.push('> 本质分 1–5 / 可指导改错分 1–5 / 偏好 / Cohen\'s κ **机器恒不给分**，须走人工盲评。');
 md.push('> 本报告不参与 auto-eval 判定、不改变 attrib:regress 门禁结果，也不得用于推断 M1 / M6。');
 

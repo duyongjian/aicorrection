@@ -9,11 +9,14 @@
  * 2. 输入题集是 `synthetic: true` 的**自造校准题集**，不是真实学生错题。
  *    **禁止**用于 G1 闸门判定、**禁止**推断 M1 认可率 / M6 盲评准确率、
  *    **禁止**写进对外材料当作真实样本。
- * 3. 量尺口径版本 RUBRIC_SCOPE 记录在产物里：`2026-11-07-wordlist-v2`。
+ * 3. 量尺口径版本 RUBRIC_SCOPE 记录在产物里：`2026-11-07-wordlist-v2.1`。
  *    第一轮修复字段口径（actionable_hint / transfer_hint 纳入 essence，
- *    explains_why 继续排除防恒真）；第二轮用**不照词表写的**非自证构造样本补词表正则
- *    （旧 6 类灵敏度 50–66.7% / 17 条漏检 0 误检 → 7 类灵敏度与特异度全部 100%）。
- *    **A/B 两侧同口径可比；与 ca2c5a8 首次基线、与 6358e12 的第一轮口径均不可直接比较**。
+ *    explains_why 继续排除防恒真）；第二轮补词表正则，用的是**照词表同义表达设计、
+ *    承认循环论证**的 84 条构造样本（旧 6 类灵敏度 50–66.7% / 17 条漏检 0 误检 →
+ *    7 类灵敏度与特异度全部 100%），**不得称为「非自证」**；另由真实语料探测互补。
+ *    第三轮（v2.1）用真实模型输出上的实证误检收窄 2 条正则，见
+ *    `scripts/quality-proxy-false-positive-probe.mjs`。
+ *    **A/B 两侧同口径可比；与 ca2c5a8 首次基线、6358e12 第一轮、8283f96 v2 口径均不可直接比较**。
  * 4. 已知不对称：v0.5-depth 要求把「成立的依据」写进「本质」段，而 explains_why
  *    刻意排除 essence 以免「本质/原理」恒真 → 该代理量对 v0.5 存在系统性低估，
  *    其数值差异不得读作「v0.5 没讲为什么」。
@@ -31,12 +34,13 @@ import {
   evaluateQualitySignals,
   summarizeQuality,
   HUMAN_ONLY_DIMENSIONS,
+  RUBRIC_SCOPE,
 } from '../apps/api/src/tests/quality-rubric.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const REPORT_DIR = path.join(REPO_ROOT, 'reports');
-const RUBRIC_SCOPE = '2026-11-07-wordlist-v2';
+// RUBRIC_SCOPE 由 quality-rubric.mjs 单一权威导出，避免两处硬编码版本漂移。
 
 const args = process.argv.slice(2);
 function arg(name, fallback) {
@@ -194,8 +198,8 @@ const payload = {
     '自造校准题集，不是真实学生错题。禁止用于 G1 闸门判定、禁止推断 M1 认可率 / M6 盲评准确率、禁止写进对外材料当作真实样本。',
   scope_note:
     '只比结构代理量，不产出质量分、不下质量结论。A/B 两侧同口径可比；' +
-    '与 ca2c5a8 首次基线、与 6358e12 的第一轮口径（essence-scope-fix）均不可直接比较 —— ' +
-    '第二轮补了词表正则，数字差异来自量尺而非模型行为。',
+    '与 ca2c5a8 首次基线、6358e12 第一轮（essence-scope-fix）、8283f96 第二轮（wordlist-v2）' +
+    '均不可直接比较 —— 补词表与按真实语料实证误检收窄正则都改了量尺，数字差异来自量尺而非模型行为。',
   known_asymmetry:
     'v0.5-depth 要求把「成立的依据」写进「本质」段，而 explains_why 刻意排除 essence 防恒真 → 该代理量对 v0.5 系统性低估。',
   // 全部由 results 实算，不写死 0：校验日后若放宽，validation 也不会与真实数据脱节
@@ -236,7 +240,7 @@ const md = [];
 md.push('# 归因深度候选 A/B：结构代理量对比（合成校准集，非质量评价）');
 md.push('');
 md.push(`- 生成时间：${payload.generated_at}`);
-md.push(`- 量尺口径：\`${RUBRIC_SCOPE}\`（A/B 两侧**同口径可比**；与 ca2c5a8 首次基线、与 6358e12 第一轮口径均**不可比** —— 第二轮补了词表正则，数字差异来自量尺而非模型行为）`);
+md.push(`- 量尺口径：\`${RUBRIC_SCOPE}\`（A/B 两侧**同口径可比**；与 ca2c5a8 首次基线、6358e12 第一轮、8283f96 第二轮 v2 均**不可比** —— 补词表 + 真实语料实证误检收窄正则，数字差异来自量尺而非模型行为）`);
 md.push(`- 报告：\`${payload.report}\`；题集：\`${payload.set}\``);
 md.push(`- 校验：${payload.validation.rows} 条 / ${payload.validation.unique_case_ids} 题 / ${payload.validation.unique_combos} 唯一组合 / err ${payload.validation.err_n} / ok=false ${payload.validation.ok_false_n} / essence ${payload.validation.essence_present_n} 条 / 每变体 ${JSON.stringify(payload.validation.per_variant)}`);
 md.push(`- 人工维度恒 null：${payload.human_only_all_null}`);
@@ -289,7 +293,8 @@ md.push('');
 md.push(`- ${payload.known_asymmetry}`);
 md.push('- `transfer_hint` 是 L4 的结构代理；词表检出能力已校准，但**该结构与质量的相关性未校准**。');
 md.push('- `structured_ids_present` 检出的是 KPI §6.3.1「kq_id / cause_id 上线即锁死」的实现缺口，与 prompt 变体无关。');
-md.push('- 第二轮改用**不照词表写的**非自证构造样本：旧 6 类词表灵敏度 50–66.7% / 17 条漏检 0 误检 → 补词表后 7 类灵敏度与特异度全部 100%；真实语料探测见 `quality-proxy-corpus-probe.mjs`。');
+md.push('- 第二轮构造样本系**照词表同义表达设计、承认循环论证**（不得称「非自证」）：它测出旧 6 类灵敏度 50–66.7% / 17 条漏检 0 误检 → 补词表后本样本 7 类 100%，**只证明本样本无漏检/无误检**，不证明真实语料无误检；真实语料探测见 `quality-proxy-corpus-probe.mjs`。');
+md.push('- 第三轮（v2.1）以 `scripts/quality-proxy-false-positive-probe.mjs` 在 8093 真实语料 34 + A/B 合成 60 上逐条复核新增正则，实证 2 处误检（rc05 裸「原因」、qy01/v0.5-depth 裸「同样」）并收窄 2 条正则；收窄后构造样本仍 7 类 100%、单测 18/18。');
 md.push('- 本质分 / 可指导分 / 偏好 / Cohen\'s κ 仍为 `null`，须由 2 人独立盲评产生；本报告不提供任何质量结论。');
 md.push('');
 md.push(`> ${payload.disclaimer}`);
