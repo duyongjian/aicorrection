@@ -32,3 +32,12 @@ npm-debug.log*
 
 # K1.3 Prompt A/B 报告（本地产物，不入库；需要归档时手动复制到 docs/）
 reports/
+
+# 线下分发产物（独立库 / uploads / 明文卡密 CSV）—— 绝不入库
+# data/distribution/ 覆盖分发库 aicorrection-dist.db、uploads/ 及其中的 CSV；
+# 根目录 *.csv 覆盖默认 --out 落点；*.cards.csv / *.license.csv 覆盖约定命名的输出。
+# 注意：不要用全局 *.csv —— apps/api/scripts/mmulu_zh.csv 是题库数据，需保留在版本控制内。
+data/distribution/
+/*.csv
+*.cards.csv
+*.license.csv

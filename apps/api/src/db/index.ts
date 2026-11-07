@@ -12,9 +12,14 @@ let db: Database.Database | null = null;
 
 export function getDb(): Database.Database {
   if (db) return db;
-  fs.mkdirSync(path.dirname(env.DB_PATH), { recursive: true });
+  // 线下分发 / 隔离测试库覆盖：未设置时完全沿用 env.DB_PATH，既有行为零变化。
+  // 设置 AICORRECTION_DB_PATH 后，API 与发卡 CLI 共用同一独立库，
+  // 确保分发版不会读写既有 335MB 生产库。每次 getDb() 读取，配合
+  // __resetDbSingleton() 可在同一进程内切换测试库。
+  const dbPath = process.env.AICORRECTION_DB_PATH?.trim() || env.DB_PATH;
+  fs.mkdirSync(path.dirname(dbPath), { recursive: true });
   fs.mkdirSync(env.UPLOAD_DIR, { recursive: true });
-  db = new Database(env.DB_PATH);
+  db = new Database(dbPath);
   db.pragma('journal_mode = WAL');
   db.pragma('foreign_keys = ON');
   runMigrations(db);

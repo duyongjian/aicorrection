@@ -76,3 +76,28 @@ export const M1_APPROVAL_GATE = 0.7;
 
 /** Mock 归因模型版本 */
 export const MOCK_ATTR_MODEL_VERSION = 'mock-v1';
+
+// ===================== 线下分发 MVP：卡密凭证契约 =====================
+
+/** 业务请求携带凭证的 header（同时兼容 Authorization: Bearer，见 requireLicense） */
+export const LICENSE_TOKEN_HEADER = 'x-license-token';
+
+/** 前端保存凭证的 localStorage key */
+export const LICENSE_TOKEN_STORAGE_KEY = 'aicorrection_license_token';
+
+/**
+ * 仅供「上传原图回显」使用的 HttpOnly cookie 名。
+ *
+ * 背景：<img src="/api/v1/uploads/..."> 由浏览器直接发起，无法携带自定义 header，
+ * 但门禁又不能为此对 uploads 匿名放行。兑换成功后由服务端下发此 cookie，
+ * requireLicense 仅在 /uploads/* 路径接受它；其余业务接口一律只认 header，
+ * 避免把 cookie 变成全站 CSRF 凭证。cookie 的 path 也收窄到 uploads 前缀。
+ */
+export const LICENSE_COOKIE_NAME = 'aicorrection_license';
+
+/**
+ * 既有匿名身份存储 key（apps/web/src/store/loopStore.ts 的 LS_KEY）。
+ * 卡密兑换成功后必须写入这里，useLoop 才会复用已有 anon_user_id、
+ * 不再调用公开的 POST /account，主流程因此零改动。
+ */
+export const ANON_USER_STORAGE_KEY = 'aicorrection_anon_user';

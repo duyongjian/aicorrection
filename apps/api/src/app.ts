@@ -22,6 +22,8 @@ import followupRoutes from './routes/followupRoutes';
 import reviewRoutes from './routes/reviewRoutes';
 import trackingRoutes from './routes/trackingRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
+import licenseRoutes from './routes/licenseRoutes';
+import { requireLicense } from './middleware/requireLicense';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { getAnalysisProvider, getRecognitionProvider } from './services/llm';
 
@@ -134,6 +136,15 @@ export function createApp() {
       warnings,
     });
   });
+
+  // ---- 线下分发 MVP：卡密门禁 ----
+  // 挂载在 base 上、所有业务路由之前。此时 req.path 已被剥掉 base 前缀，
+  // 与 requireLicense 的 PUBLIC_RULES 相对路径一致。
+  // 门禁默认关闭（LICENSE_GATE_ENABLED=true 才生效），既有开发/单测行为零变化。
+  // /health 在 base 之外、/config/llm-status 在上面已注册，两者天然放行。
+  // 静态前端托管在 base 之外，未激活用户始终能打开激活页。
+  app.use(base, requireLicense);
+  app.use(`${base}/license`, licenseRoutes);
 
   app.use(`${base}/account`, accountRoutes);
   app.use(`${base}/upload`, uploadRoutes);

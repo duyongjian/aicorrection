@@ -24,7 +24,11 @@
     "auto-eval": "tsx apps/api/src/tests/auto-eval.mjs",
     "attrib:anchors:test": "tsx --test apps/api/src/services/attribution/references.test.ts",
     "attrib:regress:real": "tsx scripts/attrib-regress.mjs",
-    "attrib:regress": "npm run attrib:anchors:test"
+    "attrib:regress": "npm run attrib:anchors:test",
+    "license:generate": "tsx scripts/license-cli.mjs generate",
+    "license:list": "tsx scripts/license-cli.mjs list",
+    "license:revoke": "tsx scripts/license-cli.mjs revoke",
+    "distribute": "node scripts/distribute.mjs"
   },
   "devDependencies": {
     "concurrently": "^8.2.2",

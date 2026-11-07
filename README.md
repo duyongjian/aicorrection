@@ -63,6 +63,24 @@ npm run build        # 先 build shared → web → api
 
 前端静态资源由后端 `express.static` 托管（见 `apps/api/src/app.ts`），生产态单进程 :3001。
 
+## 线下分发 MVP（卡密 + 账号）
+
+> 想直接发给真人试用，走这里。完整说明见 [`docs/线下分发MVP_卡密与账号.md`](docs/线下分发MVP_卡密与账号.md)。
+
+```bash
+npm run license:generate -- --count 20 --batch offline-01   # 发卡（明文只输出一次）
+npm run distribute                                          # 构建 + 单端口启动（强制开启门禁）
+# 打开 http://localhost:3001，把卡密发给试用者激活
+
+npm run license:list -- --batch offline-01                   # 看状态
+npm run license:revoke -- --code AC-XXXX-XXXX-XXXX           # 停用
+```
+
+- **卡密即账号**：兑换成功自动创建既有 `anon_user_id`，无需注册。
+- **独立分发库**：`data/distribution/`，绝不读写生产库 `apps/api/src/data/aicorrection.db`（约 335MB）。
+- **门禁默认关闭**：只有 `LICENSE_GATE_ENABLED=true` 生效，开发态与单测行为零变化。
+- ⚠️ **本版为线下内测体验版，归因质量尚未通过正式验收（G1 仍 NO-GO）**，请仅用于体验与反馈，勿将内测数据当作正式基线。
+
 ## 自验证
 
 ```bash
@@ -75,6 +93,9 @@ npm run build -w @aicorrection/web
 # 3) 端到端冒烟（需先启动 api server，默认走 Mock 兜底也能跑通五步闭环）
 npm run dev:api      # 另开终端
 npm run smoke        # 覆盖：上传→归因→认可/追问→埋点→看板 M1
+
+# 4) 卡密门禁端到端回归（真实 HTTP + 系统 temp 隔离库，不碰生产库，无需先启服务）
+npm run build:shared && npx tsx scripts/license-e2e.mjs
 ```
 
 ## 关键契约速查

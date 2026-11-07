@@ -4,9 +4,11 @@ import UploadPage from './pages/UploadPage';
 import AttributionPage from './pages/AttributionPage';
 import DashboardPage from './pages/DashboardPage';
 import HistoryPage from './pages/HistoryPage';
+import LicenseGate from './components/LicenseGate';
 
 export default function App() {
   return (
+    <LicenseGate>
     <Box sx={{ minHeight: '100vh', bgcolor: 'grey.50' }}>
       <AppBar position="static" elevation={1}>
         <Toolbar>
@@ -36,5 +38,6 @@ export default function App() {
         </Routes>
       </Container>
     </Box>
+    </LicenseGate>
   );
 }

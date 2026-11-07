@@ -3,7 +3,7 @@
  */
 import { create } from 'zustand';
 import { nanoid } from 'nanoid';
-import { ID_PREFIX } from '@aicorrection/shared';
+import { ID_PREFIX, ANON_USER_STORAGE_KEY } from '@aicorrection/shared';
 import type {
   Segment,
   OcrStatus,
@@ -16,7 +16,7 @@ import type {
  * 使同一浏览器跨刷新/跨页面保持稳定身份。否则每次刷新都新建匿名用户，
  * 历史会被切碎、按当前用户查历史也会查空。
  */
-const LS_KEY = 'aicorrection_anon_user';
+const LS_KEY = ANON_USER_STORAGE_KEY;
 
 interface PersistedUser {
   anonUserId: string;

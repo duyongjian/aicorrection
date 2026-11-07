@@ -165,6 +165,12 @@ export const ERROR_CODES = {
   ATTR_TIMEOUT: 3002,
   ATTR_INCOMPLETE: 3003,
   FOLLOWUP_LIMIT: 3004,
+  // 卡密门禁（线下分发 MVP）：4xxx 段，均为可展示给用户的明确原因
+  LICENSE_REQUIRED: 4001,
+  LICENSE_INVALID: 4002,
+  LICENSE_ALREADY_USED: 4003,
+  LICENSE_REVOKED: 4004,
+  LICENSE_EXPIRED: 4005,
   INTERNAL: 5000,
 } as const;
 
@@ -403,6 +409,50 @@ export interface UploadFailureBucket {
   key: string;
   count: number;
 }
+
+// ===================== 卡密 / 线下分发 MVP =====================
+
+/**
+ * 线下内测分发凭证。设计取舍：卡密即账号 —— 不引入手机号/邮箱/微信注册，
+ * 避免外发与注册摩擦；兑换成功即创建既有 `anon_user_id`，主流程零改动。
+ * 服务端只存卡密与 token 的 SHA-256，明文仅在管理员本机生成时输出一次。
+ */
+
+/** 兑换请求：卡密 + 用户分段（分段沿用既有 SEGMENTS） */
+export interface LicenseRedeemRequest {
+  code: string;
+  segment: Segment;
+}
+
+/** 兑换成功响应：license_token 是后续所有业务请求的凭证 */
+export interface LicenseRedeemResponse {
+  license_token: string;
+  anon_user_id: string;
+  segment: Segment;
+  batch_id: string | null;
+  expires_at: string | null;
+  bound_at: string;
+}
+
+/**
+ * 凭证状态：前端每次冷启动校验一次，失效即回到激活页。
+ * `gate_enabled=false` 表示服务端未开启卡密门禁（开发/未分发模式），
+ * 此时前端必须直接放行，不能显示一张永远无法通过的激活页。
+ */
+export interface LicenseStatusResponse {
+  active: boolean;
+  /** 服务端是否开启卡密门禁；前端据此区分「未激活」与「本就无需激活」 */
+  gate_enabled: boolean;
+  anon_user_id: string | null;
+  segment: Segment | null;
+  batch_id: string | null;
+  expires_at: string | null;
+  reason?: 'missing' | 'invalid' | 'revoked' | 'expired';
+}
+
+/** 卡密状态枚举（管理端 CLI 与 DB CHECK 约束一致） */
+export const LICENSE_STATUSES = ['unused', 'redeemed', 'revoked'] as const;
+export type LicenseStatus = (typeof LICENSE_STATUSES)[number];
 
 /**
  * 尝试级上传失败诊断。与 G1/M5 的关系：

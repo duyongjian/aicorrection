@@ -3,6 +3,12 @@
  * 统一以 /api/v1 为前缀（开发态由 Vite 代理转发到 :3001）。
  */
 import axios from 'axios';
+import {
+  LICENSE_TOKEN_HEADER,
+  LICENSE_TOKEN_STORAGE_KEY,
+  ANON_USER_STORAGE_KEY,
+  ERROR_CODES,
+} from '@aicorrection/shared';
 import type {
   AccountResponse,
   CreateAccountRequest,
@@ -21,6 +27,9 @@ import type {
   ReviewWriteRequest,
   ReviewWriteResponse,
   HistoryItem,
+  LicenseRedeemRequest,
+  LicenseRedeemResponse,
+  LicenseStatusResponse,
 } from '@aicorrection/shared';
 
 /**
@@ -34,6 +43,28 @@ const REQUEST_TIMEOUT_MS = 960_000;
 const http = axios.create({
   baseURL: '/api/v1',
   timeout: REQUEST_TIMEOUT_MS,
+});
+
+/**
+ * 线下分发 MVP：请求自动携带卡密凭证（若本地已保存）。
+ * 仅在同名 header 缺失时补齐，避免覆盖请求自身已设置的值。
+ */
+http.interceptors.request.use((config) => {
+  let token: string | null = null;
+  try {
+    token = localStorage.getItem(LICENSE_TOKEN_STORAGE_KEY);
+  } catch {
+    /* 隐私模式 / localStorage 不可用：按无凭证处理 */
+  }
+  if (token) {
+    if (!config.headers[LICENSE_TOKEN_HEADER]) {
+      config.headers[LICENSE_TOKEN_HEADER] = token;
+    }
+    if (!config.headers.Authorization) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  }
+  return config;
 });
 
 /**
@@ -82,8 +113,31 @@ http.interceptors.response.use(
     return r;
   },
   (err) => {
-    const resp = (err as { response?: { data?: { message?: string }; status?: number } })
-      .response;
+    const resp = (
+      err as {
+        response?: {
+          data?: { message?: string; code?: number };
+          status?: number;
+        };
+      }
+    ).response;
+    // 卡密凭证缺失/被吊销/过期：清理本地身份并通知 LicenseGate 回到激活页。
+    // 这里不做 reload，由 Gate 统一处理，且不影响下方既有的错误转换行为。
+    const bodyCode = resp?.data?.code;
+    if (
+      resp?.status === 401 &&
+      (bodyCode === ERROR_CODES.LICENSE_REQUIRED ||
+        bodyCode === ERROR_CODES.LICENSE_REVOKED ||
+        bodyCode === ERROR_CODES.LICENSE_EXPIRED)
+    ) {
+      try {
+        localStorage.removeItem(LICENSE_TOKEN_STORAGE_KEY);
+        localStorage.removeItem(ANON_USER_STORAGE_KEY);
+      } catch {
+        /* localStorage 不可用时忽略 */
+      }
+      window.dispatchEvent(new CustomEvent('aicorrection:license-lost'));
+    }
     const e = err as { code?: string; message?: string };
     const meta: UploadErrorMeta = {
       hasResponse: !!resp,
@@ -122,6 +176,16 @@ export function describeError(e: unknown): string {
 }
 
 export const api = {
+  /** 卡密兑换：成功返回 license_token 与已绑定的匿名身份。 */
+  redeemLicense(req: LicenseRedeemRequest): Promise<LicenseRedeemResponse> {
+    return http.post('/license/redeem', req).then((r) => r.data.data);
+  },
+
+  /** 凭证状态：始终 HTTP 200；active=false 时前端回到激活页。 */
+  getLicenseStatus(): Promise<LicenseStatusResponse> {
+    return http.get('/license/status').then((r) => r.data.data);
+  },
+
   createAccount(req: CreateAccountRequest): Promise<AccountResponse> {
     return http.post('/account', req).then((r) => r.data.data);
   },

@@ -1,0 +1,112 @@
+/**
+ * 卡密门禁中间件（线下分发 MVP）
+ *
+ * 默认关闭：只有显式 LICENSE_GATE_ENABLED=true 才生效，确保既有开发流程与
+ * 全量单测行为零变化；分发启动脚本会强制开启。
+ *
+ * 挂载在 API_BASE_PATH 下、业务路由之前。静态前端在 base 之外，不受门禁，
+ * 用户因此总能打开激活页。
+ */
+import type { Request, RequestHandler } from 'express';
+import { HttpError } from './errorHandler';
+import {
+  ERROR_CODES,
+  LICENSE_TOKEN_HEADER,
+  LICENSE_COOKIE_NAME,
+} from '@aicorrection/shared';
+import { isLicenseGateEnabled, verifyLicenseToken } from '../services/licenseService';
+
+/** 手工解析 Cookie 头（避免为这一处引入 cookie-parser 依赖）。 */
+function readCookie(req: Request, name: string): string | null {
+  const raw = req.headers.cookie;
+  if (!raw) return null;
+  for (const part of raw.split(';')) {
+    const i = part.indexOf('=');
+    if (i < 0) continue;
+    if (part.slice(0, i).trim() !== name) continue;
+    const value = part.slice(i + 1).trim();
+    if (!value) return null;
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  }
+  return null;
+}
+
+/**
+ * 从 header 取凭证，兼容 x-license-token 与 Authorization: Bearer。
+ *
+ * `allowUploadCookie` 仅由 requireLicense 在 GET /uploads/* 时置 true：浏览器 <img>
+ * 无法带自定义 header，故额外接受兑换时下发的 HttpOnly cookie 作为**同一种凭证**。
+ * 注意这不是放行 —— 该路径仍必须经过 verifyLicenseToken 的完整校验。
+ * 业务接口一律只认 header，避免 cookie 变成全站 CSRF 凭证。
+ */
+export function extractLicenseToken(req: Request, allowUploadCookie = false): string | null {
+  const direct = req.header(LICENSE_TOKEN_HEADER);
+  if (direct && direct.trim()) return direct.trim();
+  const auth = req.header('authorization');
+  if (auth && /^Bearer\s+/i.test(auth)) return auth.replace(/^Bearer\s+/i, '').trim();
+  if (allowUploadCookie) return readCookie(req, LICENSE_COOKIE_NAME);
+  return null;
+}
+
+/**
+ * 无需凭证的路径（相对 API_BASE_PATH 挂载点）。
+ * 仅放行兑换与状态查询：激活页本身必须可匿名访问，否则永远进不去。
+ * /health 在 base 之外、/config/llm-status 在本中间件之前注册，两者天然放行。
+ *
+ * 明确的收紧取舍：/uploads/* **不在**放行清单内，原图也必须经验证凭证才能读取，
+ * 只是允许用兑换时下发的 HttpOnly cookie 承载凭证（见 extractLicenseToken）。
+ * /track 埋点与所有业务接口一律需要凭证。
+ */
+const PUBLIC_RULES: Array<{ method: string; path: string }> = [
+  { method: 'POST', path: '/license/redeem' },
+  { method: 'GET', path: '/license/status' },
+];
+
+export interface LicenseContext {
+  anonUserId: string;
+  segment: string;
+  batchId: string;
+}
+
+export const requireLicense: RequestHandler = (req, res, next) => {
+  if (!isLicenseGateEnabled()) {
+    next();
+    return;
+  }
+  if (PUBLIC_RULES.some((r) => r.method === req.method && r.path === req.path)) {
+    next();
+    return;
+  }
+  // 原图回显是浏览器 <img> 直连，无法带 header；仅此路径额外接受专用 cookie 承载
+  // 同一份凭证。仍然完整走 verifyLicenseToken，不存在匿名放行。
+  const isUploadAsset = req.method === 'GET' && req.path.startsWith('/uploads/');
+  const v = verifyLicenseToken(extractLicenseToken(req, isUploadAsset));
+  if (!v.ok) {
+    const code =
+      v.reason === 'expired'
+        ? ERROR_CODES.LICENSE_EXPIRED
+        : v.reason === 'revoked'
+          ? ERROR_CODES.LICENSE_REVOKED
+          : ERROR_CODES.LICENSE_REQUIRED;
+    const message =
+      v.reason === 'expired'
+        ? '卡密已过期，请联系发放人'
+        : v.reason === 'revoked'
+          ? '卡密已停用，请联系发放人'
+          : '请先使用卡密激活后再使用';
+    // 用 next(err) 而非 throw：Express 4 对同步 throw 的捕获依赖 router 实现细节，
+    // 显式交给错误中间件更稳妥，且能保证 errorHandler 统一输出 {code,message} 信封。
+    next(new HttpError(code, 401, message));
+    return;
+  }
+  res.locals.license = {
+    anonUserId: v.anonUserId,
+    segment: v.segment,
+    batchId: v.batchId,
+  } as LicenseContext;
+  next();
+};
