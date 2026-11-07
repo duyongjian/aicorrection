@@ -128,6 +128,12 @@ export interface LoopSession {
   has_practice: 0 | 1 | null;
   restate_len: number | null;
   restate_is_copy: 0 | 1 | null;
+  /** v0.2 R05 复盘本质完整文本 */
+  restate_text?: string | null;
+  /** v0.2 R06 追问验证：探针问题 / 用户应答 / 反馈 */
+  verify_prompt?: string | null;
+  verify_response?: string | null;
+  verify_feedback?: string | null;
   created_at: string;
 }
 

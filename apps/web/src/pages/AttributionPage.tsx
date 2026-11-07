@@ -5,6 +5,7 @@ import { useLoop } from '../hooks/useLoop';
 import AttributionCard from '../components/AttributionCard';
 import RateActions from '../components/RateActions';
 import FollowupPanel from '../components/FollowupPanel';
+import LoopPracticePanel from '../components/LoopPracticePanel';
 import AnalyzingState from '../components/AnalyzingState';
 import OcrFeedback from '../components/OcrFeedback';
 import HistoryList from '../components/HistoryList';
@@ -15,7 +16,7 @@ type Status = 'idle' | 'loading' | 'ok' | 'analyzing' | 'incomplete' | 'error';
 /** R02 + R03 归因展示 + 认可 / 追问；无进行中归因时回退展示历史（FLW-02）。 */
 export default function AttributionPage() {
   const navigate = useNavigate();
-  const { loop, attribution, runAttribution, rate, followup, resetLoop, error } =
+  const { loop, attribution, runAttribution, rate, followup, resetLoop, error, anonUserId } =
     useLoop();
 
   const [status, setStatus] = useState<Status>('idle');
@@ -234,6 +235,9 @@ export default function AttributionPage() {
               </Button>
               {showFollowup && (
                 <FollowupPanel onFollowup={followup} />
+              )}
+              {loop && anonUserId && (
+                <LoopPracticePanel loopId={loop.loop_id} anonUserId={anonUserId} />
               )}
               <Button
                 onClick={() => {

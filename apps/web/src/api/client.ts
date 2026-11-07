@@ -216,6 +216,52 @@ export const api = {
     return http.get('/license/status').then((r) => r.data.data);
   },
 
+  // ===== v0.2 闭环补全（R04 同类题 / R05 复述本质 / R06 追问验证） =====
+  generatePractice(body: {
+    loop_id: string;
+    anon_user_id: string;
+  }): Promise<{
+    practice_id: string;
+    loop_id: string;
+    question_text: string;
+    source: 'qbank' | 'llm';
+    kp_id: string | null;
+  }> {
+    return http.post('/learn/practice/generate', body).then((r) => r.data.data);
+  },
+  gradePractice(body: {
+    practice_id: string;
+    user_answer: string;
+    anon_user_id: string;
+  }): Promise<{
+    practice_id: string;
+    is_correct: 0 | 1;
+    graded_by: 'heuristic' | 'llm';
+    feedback: string;
+  }> {
+    return http.post('/learn/practice/grade', body).then((r) => r.data.data);
+  },
+  submitRestate(body: {
+    loop_id: string;
+    text: string;
+    anon_user_id: string;
+  }): Promise<{ loop_id: string; restate_len: number; restate_is_copy: 0 | 1 }> {
+    return http.post('/learn/restate', body).then((r) => r.data.data);
+  },
+  verifyProbe(body: {
+    loop_id: string;
+    anon_user_id: string;
+  }): Promise<{ loop_id: string; question: string }> {
+    return http.post('/learn/verify/probe', body).then((r) => r.data.data);
+  },
+  verify(body: {
+    loop_id: string;
+    response: string;
+    anon_user_id: string;
+  }): Promise<{ loop_id: string; result: 'pass' | 'fail' | 'give_up'; feedback: string }> {
+    return http.post('/learn/verify', body).then((r) => r.data.data);
+  },
+
   // ===================== 真实账号体系（v0.2 地基） =====================
 
   /** 邮箱密码注册：返回 auth_token 与已绑定的匿名身份。 */
