@@ -6,6 +6,7 @@ import AttributionCard from '../components/AttributionCard';
 import RateActions from '../components/RateActions';
 import FollowupPanel from '../components/FollowupPanel';
 import LoopPracticePanel from '../components/LoopPracticePanel';
+import ReinforcePanel from '../components/ReinforcePanel';
 import AnalyzingState from '../components/AnalyzingState';
 import OcrFeedback from '../components/OcrFeedback';
 import HistoryList from '../components/HistoryList';
@@ -241,6 +242,7 @@ export default function AttributionPage() {
               {loop && anonUserId && (
                 <LoopPracticePanel loopId={loop.loop_id} anonUserId={anonUserId} />
               )}
+              {anonUserId && <ReinforcePanel anonUserId={anonUserId} />}
               {completed && (
                 <Alert severity="success">闭环已标记完成。</Alert>
               )}

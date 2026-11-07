@@ -7,7 +7,7 @@
  *    这样在 mock/离线环境下也能跑通闭环并稳定测试，真实环境下可由 LLM 提升判定质量。
  *  - 所有判定只写结论，绝不把用户作答外发作为检索内容（数据主权）。
  */
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { HttpError } from '../middleware/errorHandler';
 import { getDb } from '../db';
 import { getLoopSession } from '../models/loopSessionModel';
@@ -23,7 +23,16 @@ import {
   type PracticeItem,
   type PracticeItemSource,
 } from '../models/practiceModel';
-import { ERROR_CODES } from '@aicorrection/shared';
+import { upsertUgcItem } from '../models/qbankModel';
+import { refreshMasteryForPractice } from './aggregationService';
+import { normalizeKpKey, ERROR_CODES } from '@aicorrection/shared';
+import type {
+  GenerateGroupRequest,
+  GenerateGroupResponse,
+  GenerateGroupItem,
+  SedimentRequest,
+  SedimentResponse,
+} from '@aicorrection/shared';
 
 function newId(prefix: string): string {
   return `${prefix}-${randomBytes(12).toString('hex')}`;
@@ -135,7 +144,114 @@ export function gradePractice(practice_id: string, user_answer: string): GradePr
     }
   }
   updatePracticeGrade(practice_id, user_answer, is_correct, graded_by);
+  // R14：判分后刷新该知识点掌握度（失败不影响本次判分返回）
+  try {
+    refreshMasteryForPractice(practice_id);
+  } catch {
+    /* 掌握度为增强指标，异常不阻断主流程 */
+  }
   return { practice_id, is_correct, graded_by, feedback };
+}
+
+// ----------------- R11 答案沉淀（UGC 入库） -----------------
+
+/**
+ * 把用户/老师认可的题目+解析沉淀进题库（UGC，待审）。
+ * 同源聚合：同一题干归一化哈希派生 item_id，重复提交覆盖而非新增。
+ * 数据主权：仅存题干/解析文本与匿名贡献者哈希，绝不存 PII。
+ */
+export async function sedimentAnswer(req: SedimentRequest): Promise<SedimentResponse> {
+  if (!req.anon_user_id || !req.anon_user_id.trim()) {
+    throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, '缺少 anon_user_id');
+  }
+  if (!req.question || req.question.trim().length < 2) {
+    throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, '题干过短');
+  }
+  if (!req.answer || req.answer.trim().length < 1) {
+    throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, '解析内容不能为空');
+  }
+  const contributorHash = createHash('sha256').update(req.anon_user_id).digest('hex').slice(0, 16);
+  const item_id = await upsertUgcItem({
+    question: req.question.trim(),
+    answer: req.answer.trim(),
+    knowledge_point: req.knowledge_point?.trim() || '',
+    snippet: req.snippet ?? null,
+    contributorHash,
+    subject: req.subject ?? undefined,
+  });
+  if (req.loop_id) {
+    getDb()
+      .prepare('UPDATE qbank_items SET sedimented_from_loop = ? WHERE item_id = ?')
+      .run(req.loop_id, item_id);
+  }
+  return {
+    item_id,
+    status: 'pending',
+    message: '已沉淀为待审题目，审核通过后将进入题库供同类练习复用。',
+  };
+}
+
+// ----------------- R13 针对性多题练习 -----------------
+
+/**
+ * 针对某个薄弱知识点生成一组练习题（题组：共享 group_id，按 group_seq 排序）。
+ * 优先从题库按知识点取题（确定性、可评测）；题目不足时按 count 循环填充，
+ * 仍不足则以 LLM 占位题兜底（离线/mock 下保证闭环不中断）。
+ */
+export function generateTargetedGroup(req: GenerateGroupRequest): GenerateGroupResponse {
+  const { anon_user_id, target_kp, count } = req;
+  if (!anon_user_id || !anon_user_id.trim()) {
+    throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, '缺少 anon_user_id');
+  }
+  if (!target_kp || !target_kp.trim()) {
+    throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, '缺少 target_kp');
+  }
+  const n = Math.max(1, Math.min(Number.isFinite(count) ? Math.floor(count) : 1, 20));
+  const kpKey = req.kp_key && req.kp_key.trim() ? req.kp_key.trim() : normalizeKpKey(null, target_kp);
+  const candidates = getQbankByKnowledgePoint(target_kp.trim());
+
+  const group_id = newId('grp');
+  const items: GenerateGroupItem[] = [];
+  for (let i = 0; i < n; i++) {
+    let questionText: string;
+    let answerText: string;
+    let source: 'qbank' | 'llm';
+    const src = candidates.length ? candidates[i % candidates.length] : undefined;
+    if (src) {
+      questionText = src.question_text;
+      answerText = src.answer_text;
+      source = 'qbank';
+    } else {
+      questionText = `（练习）请重新做一道与「${target_kp.trim()}」相关的题目，并写出关键步骤。`;
+      answerText = '（由模型批改）';
+      source = 'llm';
+    }
+    const practice_id = newId('prac');
+    const item: PracticeItem = {
+      practice_id,
+      loop_id: '',
+      anon_user_id,
+      kp_id: kpKey,
+      question_text: questionText,
+      answer_text: answerText,
+      source,
+      user_answer: null,
+      is_correct: null,
+      graded_by: null,
+      group_id,
+      group_seq: i + 1,
+    };
+    insertPractice(item);
+    items.push({
+      practice_id,
+      loop_id: null,
+      question_text: questionText,
+      source,
+      kp_id: kpKey,
+      group_seq: i + 1,
+    });
+  }
+  return { group_id, target_kp: target_kp.trim(), items };
 }
 
 // ----------------- R05 复述本质 -----------------

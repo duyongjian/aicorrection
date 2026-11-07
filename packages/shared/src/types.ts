@@ -10,6 +10,8 @@ import type {
   RateAction,
   InaccurateReason,
   AuthProvider,
+  MasteryLevel,
+  CauseId,
 } from './constants';
 
 // ===================== 灰度/金丝雀发布（K1.4） =====================
@@ -591,4 +593,117 @@ export interface AuthMeResponse {
   anon_user_id: string | null;
   segment: Segment | null;
   providers: AuthProvider[];
+}
+
+// ===================== P1 强化期（R09 错因聚合 / R10 薄弱点 / R14 掌握判定 / R11 沉淀 / R13 针对性题组） =====================
+
+/** R09 单条错因聚合（含中文标签与占比） */
+export interface CauseAggregationItem {
+  cause_id: CauseId;
+  cause_label: string;
+  count: number;
+  /** 占比 0–1（相对该用户总错因数） */
+  pct: number;
+}
+
+/** R09 错因聚合响应（按 count 降序） */
+export interface CauseAggregationResponse {
+  anon_user_id: string;
+  total: number;
+  items: CauseAggregationItem[];
+}
+
+/** R10 单条薄弱点（按知识点聚合：错误数 + 练习数 + 掌握等级 + 主要错因） */
+export interface WeakPointItem {
+  /** 知识点归一键（kp_id 或 txt:<文本>） */
+  kp_key: string;
+  /** 知识点展示文本 */
+  kp_text: string;
+  /** 该知识点下归因错误数（attributions 计数） */
+  error_count: number;
+  /** 该知识点下练习作答数（practice_items 计数） */
+  practice_count: number;
+  /** 掌握等级（R14） */
+  mastery_level: MasteryLevel;
+  /** 主要错因（错误数最高的 cause_id） */
+  top_cause: CauseId | null;
+  top_cause_label: string | null;
+}
+
+/** R10 薄弱点可视化响应（按 error_count 降序；并列按 mastery 升序） */
+export interface WeakPointsResponse {
+  anon_user_id: string;
+  items: WeakPointItem[];
+}
+
+/** R14 掌握状态（单个知识点） */
+export interface MasteryState {
+  anon_user_id: string;
+  kp_key: string;
+  kp_text: string;
+  level: MasteryLevel;
+  /** 累计练习次数 */
+  attempts: number;
+  /** 累计答对次数 */
+  correct: number;
+  /** 当前连续答对次数（用于升级判定，错一次清零） */
+  correct_streak: number;
+  last_practiced_ts: string | null;
+  updated_at: string;
+}
+
+export interface MasteryListResponse {
+  anon_user_id: string;
+  items: MasteryState[];
+}
+
+/** R11 答案沉淀请求：把用户/老师认可的题目+解析沉淀进题库（UGC）。 */
+export interface SedimentRequest {
+  anon_user_id: string;
+  /** 可选：来源闭环（用于合规留痕，可空） */
+  loop_id?: string | null;
+  question: string;
+  answer: string;
+  /** 可选：知识点文本（缺省为空串，由 qbank 归类为 other/无知识点） */
+  knowledge_point?: string | null;
+  /** 可选：原始题干片段（来源合规留痕） */
+  snippet?: string | null;
+  /** 可选学科 slug（math/english/politics/logic/other）；缺省 other */
+  subject?: string | null;
+}
+
+export interface SedimentResponse {
+  item_id: string;
+  /** UGC 入库状态：pending（待审） */
+  status: 'pending';
+  message: string;
+}
+
+/**
+ * R13 针对性多题练习请求：针对某个薄弱知识点生成一组练习题。
+ * target_kp 为知识点文本（与 qbank/knowledge_point 对齐，用于题库检索）；
+ * kp_key 为掌握度键（缺省由 target_kp 推导为 'txt:<文本>'）。前端传薄弱点的 kp_key 可保证
+ * 练习作答回写到同一掌握度记录（与 R10/R14 对齐）。
+ */
+export interface GenerateGroupRequest {
+  anon_user_id: string;
+  target_kp: string;
+  count: number;
+  kp_key?: string | null;
+}
+
+/** R13 题组中单题（不下发答案，由 grade 阶段内部比对） */
+export interface GenerateGroupItem {
+  practice_id: string;
+  loop_id: string | null;
+  question_text: string;
+  source: 'qbank' | 'llm';
+  kp_id: string | null;
+  group_seq: number;
+}
+
+export interface GenerateGroupResponse {
+  group_id: string;
+  target_kp: string;
+  items: GenerateGroupItem[];
 }

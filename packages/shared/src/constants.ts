@@ -134,3 +134,50 @@ export const SMS_CODE_LEN = 6;
 
 /** dev 模式标记：未配置真实 SMS/Email/WeChat provider 时，验证码/魔法链接直接回显给调用方 */
 export const AUTH_DEV_MODE = !process.env.SMS_PROVIDER && !process.env.EMAIL_PROVIDER;
+
+// ===================== P1 强化期（R09 错因聚合 / R14 掌握判定） =====================
+
+/**
+ * 错因受控词表（与 attributions.cause_id CHECK 约束完全一致）。
+ * 冻结分类：概念混淆 / 方法错误 / 计算失误 / 审题不清 / 记忆缺漏 / 其他。
+ * 前端聚合与展示一律走这里的标签，避免散落中文串。
+ */
+export const CAUSE_TAXONOMY = {
+  concept_confusion: '概念混淆',
+  method_error: '方法错误',
+  calculation_error: '计算失误',
+  reading_error: '审题不清',
+  memory_gap: '记忆缺漏',
+  other: '其他',
+} as const;
+export type CauseId = keyof typeof CAUSE_TAXONOMY;
+
+/** 掌握等级状态机（R14，受 mastery_state.level CHECK 约束） */
+export const MASTERY_LEVELS = [
+  'not_started',
+  'learning',
+  'familiar',
+  'mastered',
+] as const;
+export type MasteryLevel = (typeof MASTERY_LEVELS)[number];
+
+/** 掌握等级展示标签 */
+export const MASTERY_LABELS: Record<MasteryLevel, string> = {
+  not_started: '未开始',
+  learning: '学习中',
+  familiar: '较熟悉',
+  mastered: '已掌握',
+};
+
+/**
+ * kp_key 归一规则：优先受控词表 knowledge_point_id（kp_xxx）；
+ * 旧归因缺失 id 时退化为 'txt:<knowledge_point 文本>'，保证跨来源同一知识点可追溯。
+ */
+export function normalizeKpKey(
+  knowledgePointId: string | null,
+  knowledgePoint: string | null
+): string {
+  if (knowledgePointId && knowledgePointId.trim()) return knowledgePointId.trim();
+  const txt = (knowledgePoint || '').trim();
+  return txt ? `txt:${txt}` : 'txt:（未标注知识点）';
+}

@@ -43,6 +43,12 @@ import type {
   AuthMagicSendResponse,
   AuthMagicVerifyRequest,
   AuthStatusResponse,
+  CauseAggregationResponse,
+  WeakPointsResponse,
+  MasteryListResponse,
+  SedimentRequest,
+  SedimentResponse,
+  GenerateGroupResponse,
 } from '@aicorrection/shared';
 
 /**
@@ -413,5 +419,37 @@ export const api = {
     return http
       .post(`/review/attribution/${attributionId}`, req)
       .then((r) => r.data.data);
+  },
+
+  // ===================== P1 强化期（R09 错因聚合 / R10 薄弱点 / R14 掌握判定 / R11 沉淀 / R13 题组） =====================
+
+  /** R09 错因聚合：按 cause_id 统计分布。 */
+  getCauseAggregation(anonUserId: string): Promise<CauseAggregationResponse> {
+    return http.get(`/learn/aggregate/causes?anon_user_id=${encodeURIComponent(anonUserId)}`).then((r) => r.data.data);
+  },
+
+  /** R10 薄弱点可视化：按知识点合并错误数/练习数/掌握等级/主要错因。 */
+  getWeakPoints(anonUserId: string): Promise<WeakPointsResponse> {
+    return http.get(`/learn/weak-points?anon_user_id=${encodeURIComponent(anonUserId)}`).then((r) => r.data.data);
+  },
+
+  /** R14 掌握度：重算并返回该用户全部知识点掌握状态。 */
+  getMastery(anonUserId: string): Promise<MasteryListResponse> {
+    return http.get(`/learn/mastery?anon_user_id=${encodeURIComponent(anonUserId)}`).then((r) => r.data.data);
+  },
+
+  /** R11 答案沉淀：把认可的题目+解析沉淀进题库（UGC 待审）。 */
+  sedimentAnswer(req: SedimentRequest): Promise<SedimentResponse> {
+    return http.post('/learn/sediment', req).then((r) => r.data.data);
+  },
+
+  /** R13 针对性多题练习：针对薄弱知识点生成题组。 */
+  generateTargetedGroup(req: {
+    anon_user_id: string;
+    target_kp: string;
+    count: number;
+    kp_key?: string | null;
+  }): Promise<GenerateGroupResponse> {
+    return http.post('/learn/practice/generate-group', req).then((r) => r.data.data);
   },
 };

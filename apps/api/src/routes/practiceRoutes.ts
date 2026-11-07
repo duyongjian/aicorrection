@@ -13,7 +13,17 @@ import {
   submitRestate,
   verifyProbe,
   verify,
+  sedimentAnswer,
+  generateTargetedGroup,
 } from '../services/learningService';
+import {
+  getCauseAggregation,
+  getWeakPoints,
+  refreshAllMastery,
+  getMasteryState,
+} from '../services/aggregationService';
+import { ERROR_CODES } from '@aicorrection/shared';
+import { HttpError } from '../middleware/errorHandler';
 
 const router = Router();
 
@@ -70,5 +80,105 @@ router.post('/verify', validateBody(z.object({ loop_id: z.string().min(1), respo
     next(e);
   }
 });
+
+// ===================== P1 强化期 =====================
+
+/** 查询参数中提取并校验 anon_user_id。 */
+function requireAnonUserId(req: { query: Record<string, unknown> }): string {
+  const v = req.query.anon_user_id;
+  if (typeof v !== 'string' || !v.trim()) {
+    throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, '缺少 anon_user_id');
+  }
+  return v.trim();
+}
+
+/** R09 错因聚合：按 cause_id 统计分布。 */
+router.get('/aggregate/causes', (req, res, next) => {
+  try {
+    const anon_user_id = requireAnonUserId(req);
+    res.json(ok(getCauseAggregation(anon_user_id)));
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** R10 薄弱点可视化：按知识点合并错误数/练习数/掌握等级/主要错因。 */
+router.get('/weak-points', (req, res, next) => {
+  try {
+    const anon_user_id = requireAnonUserId(req);
+    res.json(ok(getWeakPoints(anon_user_id)));
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** R14 掌握度：重算并返回该用户全部知识点掌握状态。 */
+router.get('/mastery', (req, res, next) => {
+  try {
+    const anon_user_id = requireAnonUserId(req);
+    res.json(ok(refreshAllMastery(anon_user_id)));
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** R14 掌握度：单个知识点（kp_key 可能含 'txt:' 前缀，URL 编码传入）。 */
+router.get('/mastery/:kp_key', (req, res, next) => {
+  try {
+    const anon_user_id = requireAnonUserId(req);
+    const kpKey = decodeURIComponent(req.params.kp_key || '');
+    if (!kpKey) throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, '缺少 kp_key');
+    res.json(ok(getMasteryState(anon_user_id, kpKey)));
+  } catch (e) {
+    next(e);
+  }
+});
+
+/** R11 答案沉淀：把认可的题目+解析沉淀进题库（UGC 待审）。 */
+router.post(
+  '/sediment',
+  validateBody(
+    z.object({
+      anon_user_id: z.string().min(1),
+      loop_id: z.string().min(1).nullable().optional(),
+      question: z.string().min(2),
+      answer: z.string().min(1),
+      knowledge_point: z.string().nullable().optional(),
+      snippet: z.string().nullable().optional(),
+      subject: z.string().nullable().optional(),
+    })
+  ),
+  (req, res, next) => {
+    (async () => {
+      try {
+        const r = await sedimentAnswer(req.body);
+        res.json(ok(r));
+      } catch (e) {
+        next(e);
+      }
+    })();
+  }
+);
+
+/** R13 针对性多题练习：针对薄弱知识点生成题组。 */
+router.post(
+  '/practice/generate-group',
+  validateBody(
+    z.object({
+      anon_user_id: z.string().min(1),
+      target_kp: z.string().min(1),
+      count: z.number().int().min(1).max(20),
+      kp_key: z.string().nullable().optional(),
+    })
+  ),
+  (req, res, next) => {
+    try {
+      const r = generateTargetedGroup(req.body);
+      res.json(ok(r));
+    } catch (e) {
+      next(e);
+    }
+  }
+);
 
 export default router;
