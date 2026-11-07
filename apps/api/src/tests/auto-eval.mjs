@@ -21,11 +21,19 @@
  *   - numeric_facts:     仅对声明 expected_facts 的 case 启用严格数值/配对判据（见下方专节）
  *                        支持 pair | set | interval | monotonic_direction | text 五类断言；
  *                        monotonic_direction 专门拦截「推导对、答案行把增/减方向写反」
+ *   - quality_rubric:    只读附加维度（见 quality-rubric.mjs）：机器仅产出结构代理量，
+ *                        本质分/可指导分等人工维度恒为 null，不参与 PASS/FAIL 判定
  */
 
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import {
+  evaluateQualitySignals,
+  summarizeQuality,
+  buildReviewQueue,
+  HUMAN_ONLY_DIMENSIONS,
+} from './quality-rubric.mjs';
 
 const REPO_ROOT = path.resolve(process.cwd());
 const DEFAULT_SET_PATH = path.join(REPO_ROOT, 'apps', 'api', 'src', 'tests', 'fixtures', 'prompt-ab-set.json');
@@ -736,6 +744,8 @@ function main() {
   const factsMap = new Map(
     setDoc.cases.filter(c => c.expected_facts && typeof c.expected_facts === 'object').map(c => [c.id, c.expected_facts])
   );
+  // 质量量尺只读附加：取题集 case 元数据（depth_target / trap / provisional_truth），不改任何判定式。
+  const caseMap = new Map(setDoc.cases.map(c => [c.id, c]));
 
   // 过滤
   let results = report.results;
@@ -768,8 +778,16 @@ function main() {
       eval: evalResult,
       truth: truth.slice(0, 120),
       isTrap,
+      // 只读附加：不参与 evalResult 判定（见 quality-rubric.mjs 口径纪律）
+      quality_signals: evaluateQualitySignals(r, caseMap.get(r.case_id) || {}),
     };
   });
+
+  const qualitySignals = scored.map(s => s.quality_signals);
+  const qualitySummary = summarizeQuality(qualitySignals);
+  const reviewQueue = buildReviewQueue(qualitySignals);
+  const qp = qualitySummary.proxies;
+  const dist = qp.depth_signal_level_distribution;
 
   // 汇总
   const byVariant = new Map();
@@ -809,6 +827,14 @@ function main() {
   const trapRateText = traps.length ? `${(trapPass/traps.length*100).toFixed(0)}%` : 'n/a (无陷阱题)';
   console.log(`  未瞎编率: ${trapPass}/${traps.length} (${trapRateText})`);
 
+  // 只读附加维度：不得含「总: N | PASS:」/「未瞎编率:」字样，避免干扰 attrib-regress 的正则解析。
+  console.log(`\n--- 归因质量维度（结构代理量，非质量分） ---`);
+  console.log(`  契约齐全: ${qp.contract_complete.hits}/${scored.length} | 空标签错因: ${qp.cause_has_empty_label.hits}/${qualitySummary.diagnose_n} | 因果机制: ${qp.cause_has_mechanism.hits}/${qualitySummary.diagnose_n}`);
+  console.log(`  可操作改错: ${qp.actionable_hint.hits}/${scored.length} | 解释「为什么」: ${qp.explains_why.hits}/${scored.length} | 迁移/变式: ${qp.transfer_hint.hits}/${scored.length}`);
+  console.log(`  结构化 ID: ${qp.structured_ids_present.hits}/${scored.length} | 深度目标未标定: ${qualitySummary.depth_target_unspecified_count}/${scored.length}`);
+  console.log(`  结构信号等级 L1/L2/L3/L4 = ${dist.L1}/${dist.L2}/${dist.L3}/${dist.L4}（不是质量分）`);
+  console.log(`  人工盲评待评: ${qualitySummary.review_queue_size}/${scored.length}（${HUMAN_ONLY_DIMENSIONS.join(' / ')} 机器不给分）`);
+
   if (verbose) {
     console.log('\n=== 逐题详情 ===');
     for (const s of scored) {
@@ -827,13 +853,29 @@ function main() {
   const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const outJson = path.join(outDir, `eval-${ts}.json`);
   const outMd = path.join(outDir, `eval-${ts}.md`);
-  fs.writeFileSync(outJson, JSON.stringify({ generated_at: new Date().toISOString(), report_source: jsonPath, scored }, null, 2), 'utf8');
+  fs.writeFileSync(outJson, JSON.stringify({
+    generated_at: new Date().toISOString(),
+    report_source: jsonPath,
+    scored,
+    quality_rubric: { ...qualitySummary, review_queue: reviewQueue },
+  }, null, 2), 'utf8');
 
   const md = [`# Auto-Eval 报告`, `\n生成时间: ${new Date().toISOString()}`, `\n源报告: ${jsonPath}`, `\n\n## 汇总`];
   for (const v of byVariant.values()) {
     md.push(`\n### ${v.variant}`, `- PASS: ${v.pass}/${v.n} (${(v.pass/v.n*100).toFixed(0)}%)`, `- FAIL: ${v.fail}/${v.n}`, `- 原因: ${JSON.stringify(v.reasons)}`);
   }
   md.push(`\n## 陷阱题`, `- 未瞎编: ${trapPass}/${traps.length}`);
+  md.push(
+    `\n## 归因质量维度（只读附加）`,
+    `- ⚠️ 本节只含**结构代理量**，代理量命中 ≠ 归因质量达标；不参与上方 PASS/FAIL 判定。`,
+    `- ⚠️ 代理量由固定词表命中得出、**灵敏度未校准**：未命中 ≠ 质量差（如 explains_why 刻意排除 essence 段以免恒真），低命中首先应怀疑词表过窄。`,
+    `- 本质分(1-5) / 可指导改错分(1-5) / 偏好 / Cohen's κ **机器恒不给分**，须走 \`npm run blind:export\` → 2 人独立盲评 → \`npm run blind:score\`。`,
+    `- 契约齐全 ${qp.contract_complete.hits}/${scored.length}；空标签错因 ${qp.cause_has_empty_label.hits}/${qualitySummary.diagnose_n}；因果机制 ${qp.cause_has_mechanism.hits}/${qualitySummary.diagnose_n}`,
+    `- 可操作改错 ${qp.actionable_hint.hits}/${scored.length}；解释「为什么」 ${qp.explains_why.hits}/${scored.length}；迁移/变式 ${qp.transfer_hint.hits}/${scored.length}`,
+    `- 结构化 ID（KPI §6.3.1）${qp.structured_ids_present.hits}/${scored.length}；深度目标未标定 ${qualitySummary.depth_target_unspecified_count}/${scored.length}`,
+    `- 结构信号等级分布 L1/L2/L3/L4 = ${dist.L1}/${dist.L2}/${dist.L3}/${dist.L4}（**不是质量分**）`,
+    `- 人工盲评待评队列 ${qualitySummary.review_queue_size}/${scored.length}`,
+  );
   if (verbose) {
     md.push('\n## 逐题', '| 题 | 变体 | 判定 | 原因 | 模型输出 |', '|---|---|---|---|---|');
     for (const s of scored) {
@@ -860,6 +902,10 @@ export {
   extractBindings,
   MIN_TRUTH_HIT_RATE,
   DEFAULT_NUMERIC_TOLERANCE,
+  evaluateQualitySignals,
+  summarizeQuality,
+  buildReviewQueue,
+  HUMAN_ONLY_DIMENSIONS,
 };
 
 const invokedPath = process.argv[1] ? path.resolve(process.argv[1]) : '';
