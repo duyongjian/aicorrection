@@ -101,3 +101,36 @@ export const LICENSE_COOKIE_NAME = 'aicorrection_license';
  * 不再调用公开的 POST /account，主流程因此零改动。
  */
 export const ANON_USER_STORAGE_KEY = 'aicorrection_anon_user';
+
+// ===================== 真实账号体系（v0.2 地基）：auth 凭证契约 =====================
+//
+// 设计原则：anon_user_id 仍是系统内唯一身份主键（错题/归因/闭环/埋点全依赖它），
+// 真实账号只是挂在 anon_user_id 上的一个「可链接凭证层」——
+// 邮箱/手机/微信/magic 任一方式登录后都解析回同一个 anon_user_id。
+// 因此老匿名用户、卡密用户的数据与身份流完全不变，新账号体系纯增量接入。
+
+/** 业务请求携带真实账号凭证的 header（同时兼容 Authorization: Bearer，见 requireLicense） */
+export const AUTH_TOKEN_HEADER = 'x-auth-token';
+
+/** 前端保存真实账号凭证的 localStorage key */
+export const AUTH_TOKEN_STORAGE_KEY = 'aicorrection_auth_token';
+
+/**
+ * 仅供「上传原图回显」使用的 HttpOnly cookie 名（真实账号路径）。
+ * 与 LICENSE_COOKIE_NAME 对称：<img src="/api/v1/uploads/..."> 由浏览器直连，无法带自定义 header；
+ * 登录成功后由服务端下发此 cookie，requireLicense 仅在 /uploads/* 接受它，避免变成全站 CSRF 凭证。
+ */
+export const AUTH_COOKIE_NAME = 'aicorrection_auth';
+
+/** 真实账号登录方式（与 accounts 表 provider CHECK 约束一致） */
+export const AUTH_PROVIDERS = ['password', 'sms', 'wechat', 'magic'] as const;
+export type AuthProvider = (typeof AUTH_PROVIDERS)[number];
+
+/** 密码最小长度（弱密码直接拒绝，不让落地） */
+export const AUTH_PASSWORD_MIN_LEN = 8;
+
+/** SMS 验证码长度 */
+export const SMS_CODE_LEN = 6;
+
+/** dev 模式标记：未配置真实 SMS/Email/WeChat provider 时，验证码/魔法链接直接回显给调用方 */
+export const AUTH_DEV_MODE = !process.env.SMS_PROVIDER && !process.env.EMAIL_PROVIDER;

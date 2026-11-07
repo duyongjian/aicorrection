@@ -23,6 +23,7 @@ import reviewRoutes from './routes/reviewRoutes';
 import trackingRoutes from './routes/trackingRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import licenseRoutes from './routes/licenseRoutes';
+import authRoutes from './routes/authRoutes';
 import { requireLicense } from './middleware/requireLicense';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { getAnalysisProvider, getRecognitionProvider } from './services/llm';
@@ -145,6 +146,7 @@ export function createApp() {
   // 静态前端托管在 base 之外，未激活用户始终能打开激活页。
   app.use(base, requireLicense);
   app.use(`${base}/license`, licenseRoutes);
+  app.use(`${base}/auth`, authRoutes);
 
   app.use(`${base}/account`, accountRoutes);
   app.use(`${base}/upload`, uploadRoutes);

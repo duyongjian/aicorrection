@@ -9,6 +9,7 @@ import type {
   OcrStatus,
   RateAction,
   InaccurateReason,
+  AuthProvider,
 } from './constants';
 
 // ===================== 灰度/金丝雀发布（K1.4） =====================
@@ -171,6 +172,16 @@ export const ERROR_CODES = {
   LICENSE_ALREADY_USED: 4003,
   LICENSE_REVOKED: 4004,
   LICENSE_EXPIRED: 4005,
+  // 真实账号体系（v0.2）：5xxx 段，均为可展示给用户的明确原因
+  AUTH_REQUIRED: 5001,
+  AUTH_INVALID: 5002,
+  AUTH_EMAIL_TAKEN: 5003,
+  AUTH_CODE_EXPIRED: 5004,
+  AUTH_CODE_INVALID: 5005,
+  AUTH_PROVIDER_NOT_CONFIGURED: 5006,
+  AUTH_TOO_MANY_ATTEMPTS: 5007,
+  AUTH_PASSWORD_WEAK: 5008,
+  AUTH_PHONE_TAKEN: 5009,
   INTERNAL: 5000,
 } as const;
 
@@ -479,4 +490,99 @@ export interface UploadFailureBreakdown {
   by_stage: UploadFailureBucket[];
   by_reason: UploadFailureBucket[];
   by_stage_reason: UploadFailureBucket[];
+}
+
+// ===================== 真实账号体系 (auth) =====================
+//
+// 凭证层挂在既有 anon_user_id 之上：任一登录方式最终都解析回同一个 anon_user_id，
+// 因此错题/归因/闭环/埋点数据天然归属同一用户，老匿名与卡密身份不丢。
+
+/** 登录/注册成功统一响应：auth_token 是后续所有业务请求的凭证（对称于 license_token）。 */
+export interface AuthTokenResponse {
+  auth_token: string;
+  anon_user_id: string;
+  segment: Segment;
+  provider: AuthProvider;
+  bound_at: string;
+}
+
+/** 邮箱密码注册 */
+export interface AuthRegisterRequest {
+  email: string;
+  password: string;
+  segment: Segment;
+  /**
+   * 可选：绑定到已有 anon_user_id（如卡密/匿名用户后来补绑邮箱）。
+   * 提供且有效时，新凭证挂到该身份而非新建账号；不提供则新建。
+   */
+  link_anon_user_id?: string;
+}
+
+/** 邮箱密码登录 */
+export interface AuthLoginRequest {
+  email: string;
+  password: string;
+}
+
+/** 发送短信验证码（dev 模式会在响应里回显 dev_code） */
+export interface AuthSmsSendRequest {
+  phone: string;
+}
+export interface AuthSmsSendResponse {
+  ok: true;
+  /** 仅 dev 模式（未配置 SMS_PROVIDER）返回，便于离线自测 */
+  dev_code?: string;
+  message: string;
+}
+
+/** 短信验证码登录/注册 */
+export interface AuthSmsVerifyRequest {
+  phone: string;
+  code: string;
+  segment: Segment;
+  /** 可选：绑定到已有 anon_user_id（卡密/匿名用户补绑手机） */
+  link_anon_user_id?: string;
+}
+
+/** 微信 OAuth code 换登录态 */
+export interface AuthWechatRequest {
+  code: string;
+  /** 可选：绑定到已有 anon_user_id */
+  link_anon_user_id?: string;
+}
+
+/** 发送魔法链接（dev 模式会在响应里回显 dev_token） */
+export interface AuthMagicSendRequest {
+  email: string;
+}
+export interface AuthMagicSendResponse {
+  ok: true;
+  /** 仅 dev 模式（未配置 EMAIL_PROVIDER）返回，便于离线自测 */
+  dev_token?: string;
+  message: string;
+}
+
+/** 魔法链接登录/注册 */
+export interface AuthMagicVerifyRequest {
+  token: string;
+  segment?: Segment;
+  /** 可选：绑定到已有 anon_user_id */
+  link_anon_user_id?: string;
+}
+
+/** 当前登录态（用于前端冷启动校验，对称于 LicenseStatusResponse） */
+export interface AuthStatusResponse {
+  active: boolean;
+  anon_user_id: string | null;
+  segment: Segment | null;
+  provider: AuthProvider | null;
+  /** 同一 anon_user_id 已绑定的所有登录方式（用于「账号设置」展示） */
+  providers: AuthProvider[];
+}
+
+/** 当前账号信息 */
+export interface AuthMeResponse {
+  anon_user_id: string | null;
+  segment: Segment | null;
+  providers: AuthProvider[];
 }

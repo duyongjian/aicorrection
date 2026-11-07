@@ -6,6 +6,8 @@ import axios from 'axios';
 import {
   LICENSE_TOKEN_HEADER,
   LICENSE_TOKEN_STORAGE_KEY,
+  AUTH_TOKEN_HEADER,
+  AUTH_TOKEN_STORAGE_KEY,
   ANON_USER_STORAGE_KEY,
   ERROR_CODES,
 } from '@aicorrection/shared';
@@ -30,6 +32,17 @@ import type {
   LicenseRedeemRequest,
   LicenseRedeemResponse,
   LicenseStatusResponse,
+  AuthTokenResponse,
+  AuthRegisterRequest,
+  AuthLoginRequest,
+  AuthSmsSendRequest,
+  AuthSmsSendResponse,
+  AuthSmsVerifyRequest,
+  AuthWechatRequest,
+  AuthMagicSendRequest,
+  AuthMagicSendResponse,
+  AuthMagicVerifyRequest,
+  AuthStatusResponse,
 } from '@aicorrection/shared';
 
 /**
@@ -46,19 +59,23 @@ const http = axios.create({
 });
 
 /**
- * 线下分发 MVP：请求自动携带卡密凭证（若本地已保存）。
+ * 凭证自动注入：真实账号 auth token 优先，回落卡密 license token。
  * 仅在同名 header 缺失时补齐，避免覆盖请求自身已设置的值。
+ * 二者都设 x-*-token 与 Authorization: Bearer，由后端门禁统一识别。
  */
 http.interceptors.request.use((config) => {
   let token: string | null = null;
   try {
-    token = localStorage.getItem(LICENSE_TOKEN_STORAGE_KEY);
+    token = localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) || localStorage.getItem(LICENSE_TOKEN_STORAGE_KEY);
   } catch {
     /* 隐私模式 / localStorage 不可用：按无凭证处理 */
   }
   if (token) {
     if (!config.headers[LICENSE_TOKEN_HEADER]) {
       config.headers[LICENSE_TOKEN_HEADER] = token;
+    }
+    if (!config.headers[AUTH_TOKEN_HEADER]) {
+      config.headers[AUTH_TOKEN_HEADER] = token;
     }
     if (!config.headers.Authorization) {
       config.headers.Authorization = `Bearer ${token}`;
@@ -121,22 +138,35 @@ http.interceptors.response.use(
         };
       }
     ).response;
-    // 卡密凭证缺失/被吊销/过期：清理本地身份并通知 LicenseGate 回到激活页。
+    // 凭证缺失/被吊销/过期：清理本地身份并通知门禁回到激活页。
     // 这里不做 reload，由 Gate 统一处理，且不影响下方既有的错误转换行为。
     const bodyCode = resp?.data?.code;
-    if (
-      resp?.status === 401 &&
-      (bodyCode === ERROR_CODES.LICENSE_REQUIRED ||
+    const url = ((err as { config?: { url?: string } }).config?.url || '').split('?')[0];
+    const isAuthPublic = /^\/auth\/(login|register|sms\/send|sms\/verify|wechat|magic\/send|magic\/verify|status)(\/|$)/.test(
+      url
+    );
+    if (resp?.status === 401 && !isAuthPublic) {
+      const isLicense =
+        bodyCode === ERROR_CODES.LICENSE_REQUIRED ||
         bodyCode === ERROR_CODES.LICENSE_REVOKED ||
-        bodyCode === ERROR_CODES.LICENSE_EXPIRED)
-    ) {
+        bodyCode === ERROR_CODES.LICENSE_EXPIRED;
+      const isAuth =
+        bodyCode === ERROR_CODES.AUTH_REQUIRED ||
+        bodyCode === ERROR_CODES.AUTH_INVALID ||
+        bodyCode === ERROR_CODES.AUTH_PROVIDER_NOT_CONFIGURED;
       try {
-        localStorage.removeItem(LICENSE_TOKEN_STORAGE_KEY);
-        localStorage.removeItem(ANON_USER_STORAGE_KEY);
+        if (isLicense) {
+          localStorage.removeItem(LICENSE_TOKEN_STORAGE_KEY);
+          localStorage.removeItem(ANON_USER_STORAGE_KEY);
+        } else if (isAuth) {
+          localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+          localStorage.removeItem(ANON_USER_STORAGE_KEY);
+        }
       } catch {
         /* localStorage 不可用时忽略 */
       }
-      window.dispatchEvent(new CustomEvent('aicorrection:license-lost'));
+      if (isLicense) window.dispatchEvent(new CustomEvent('aicorrection:license-lost'));
+      if (isAuth) window.dispatchEvent(new CustomEvent('aicorrection:auth-lost'));
     }
     const e = err as { code?: string; message?: string };
     const meta: UploadErrorMeta = {
@@ -184,6 +214,58 @@ export const api = {
   /** 凭证状态：始终 HTTP 200；active=false 时前端回到激活页。 */
   getLicenseStatus(): Promise<LicenseStatusResponse> {
     return http.get('/license/status').then((r) => r.data.data);
+  },
+
+  // ===================== 真实账号体系（v0.2 地基） =====================
+
+  /** 邮箱密码注册：返回 auth_token 与已绑定的匿名身份。 */
+  registerWithPassword(req: AuthRegisterRequest): Promise<AuthTokenResponse> {
+    return http.post('/auth/register', req).then((r) => r.data.data);
+  },
+
+  /** 邮箱密码登录。 */
+  loginWithPassword(req: AuthLoginRequest): Promise<AuthTokenResponse> {
+    return http.post('/auth/login', req).then((r) => r.data.data);
+  },
+
+  /** 发送短信验证码（dev 模式响应里带 dev_code 便于自测）。 */
+  sendSmsCode(req: AuthSmsSendRequest): Promise<AuthSmsSendResponse> {
+    return http.post('/auth/sms/send', req).then((r) => r.data.data);
+  },
+
+  /** 短信验证码登录/注册。 */
+  verifySmsLogin(req: AuthSmsVerifyRequest): Promise<AuthTokenResponse> {
+    return http.post('/auth/sms/verify', req).then((r) => r.data.data);
+  },
+
+  /** 微信 OAuth 登录（需服务端配置 WECHAT_APP_ID；未配置返回 AUTH_PROVIDER_NOT_CONFIGURED）。 */
+  wechatAuth(req: AuthWechatRequest): Promise<AuthTokenResponse> {
+    return http.post('/auth/wechat', req).then((r) => r.data.data);
+  },
+
+  /** 发送魔法登录链接（dev 模式响应里带 dev_token 便于自测）。 */
+  magicSend(req: AuthMagicSendRequest): Promise<AuthMagicSendResponse> {
+    return http.post('/auth/magic/send', req).then((r) => r.data.data);
+  },
+
+  /** 魔法链接登录/注册。 */
+  magicVerify(req: AuthMagicVerifyRequest): Promise<AuthTokenResponse> {
+    return http.post('/auth/magic/verify', req).then((r) => r.data.data);
+  },
+
+  /** auth token 状态：始终 HTTP 200；active=false 时回到登录页。 */
+  getAuthStatus(): Promise<AuthStatusResponse> {
+    return http.get('/auth/status').then((r) => r.data.data);
+  },
+
+  /** 当前账号信息（已绑定登录方式等）。 */
+  authMe(): Promise<{ anon_user_id: string | null; segment: string | null; providers: string[] }> {
+    return http.get('/auth/me').then((r) => r.data.data);
+  },
+
+  /** 登出：清除服务端会话（前端同时清本地 token）。 */
+  authLogout(): Promise<{ ok: boolean }> {
+    return http.post('/auth/logout').then((r) => r.data.data);
   },
 
   createAccount(req: CreateAccountRequest): Promise<AccountResponse> {
