@@ -147,7 +147,8 @@ test('summarizeQuality 汇总比例、未标定计数与人工待评状态', () 
   assert.equal(s.review_queue_size, 3);
   assert.equal(s.human_only.status, 'PENDING_HUMAN_BLIND_REVIEW');
   assert.equal(s.human_only.values, null);
-  assert.match(s.proxy_caveat, /已完成「词表检出能力」校准/);
+  assert.match(s.proxy_caveat, /已完成两路「词表检出能力」校准/);
+  assert.match(s.proxy_caveat, /只证明检出能力，不证明质量相关性/);
   assert.match(s.proxy_caveat, /命中 ≠ 质量达标/);
   assert.match(s.proxy_caveat, /本模块不提供质量结论/);
   assert.match(s.disclaimer, /不得据本汇总推断 M1/);
@@ -256,6 +257,31 @@ test('resolveExpectedCause 优先显式字段、陷阱题不回退猜测、否�
   );
   assert.equal(resolveExpectedCause({}), null);
   assert.equal(resolveExpectedCause({ expected_cause: '   ' }), null);
+});
+
+test('第二轮词表校准：非自证样本不再漏检，且口径哨兵仍正确拒绝', () => {
+  const diagWith = (cause, text) => diag({
+    text: text || `错因：${cause}\n知识点：x\n本质：y`,
+    fields: { cause, knowledge_point: 'x', essence: 'y', hasThree: true },
+  });
+  // 旧词表 17 条漏检里的代表性表达（不照正则写）
+  assert.equal(evaluateQualitySignals(diagWith('疏忽大意'), {}).cause_has_empty_label, true);
+  assert.equal(evaluateQualitySignals(diagWith('知识掌握得不扎实'), {}).cause_has_empty_label, true);
+  assert.equal(evaluateQualitySignals(diagWith('把有序样本当无序组合计数'), {}).cause_has_mechanism, true);
+  assert.equal(evaluateQualitySignals(diagWith('把 sinθ 与 cosθ 记反了'), {}).cause_has_mechanism, true);
+  assert.equal(evaluateQualitySignals(diagWith('套用了并联公式，符号弄反'), {}).cause_has_mechanism, true);
+  assert.equal(evaluateQualitySignals(diagWith('应当保留换元产生的 1/2 系数'), {}).actionable_hint, true);
+  // 口径哨兵：空标签词 + 机制词 → 不得判为空标签
+  assert.equal(evaluateQualitySignals(diagWith('概念混淆导致符号弄反'), {}).cause_has_empty_label, false);
+  // 结构化 ID 不得把含 "id" 子串的普通词误判为 ID
+  assert.equal(
+    evaluateQualitySignals(diagWith('正确', 'considered valid width guide'), {}).structured_ids_present,
+    false,
+  );
+  assert.equal(
+    evaluateQualitySignals(diagWith('正确', '{"kq_id":"math.limit.taylor"}'), {}).structured_ids_present,
+    true,
+  );
 });
 
 test('evaluateQualitySignals 用 resolveExpectedCause 填入展示字段', () => {

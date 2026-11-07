@@ -4,6 +4,7 @@
 > 前置：`docs/归因质量量尺A层落地.md`（提交 `ca2c5a8`）
 > 触发：用户明确「归因质量和错题质量与深度完整度才是最关键的」，并要求「继续去优化，自己造错题也可以」。
 > 本轮目标不是延迟，也不是答案行数值，而是把**深度完整度**变成可观测、可证伪的量，并试一个离线优化候选。
+> **版本**：本文档经「第二轮词表校准」更新，量尺口径 `2026-11-07-wordlist-v2`。第一版结论见提交 `6358e12`（口径 `essence-scope-fix`）；**两版 A/B 数字不可直接比较**，差异来自词表而非模型行为。
 
 ---
 
@@ -14,7 +15,7 @@
 | **G1 闸门** | **仍为 NO-GO / OPEN BLOCKER**；v0.2（`R04/R05/R06/G2`）继续冻结 |
 | 本轮是否产出质量结论 | **否**。只产出结构代理量，本质分 / 可指导分 / 偏好 / Cohen's κ 恒为 `null` |
 | 合成题集 | `synthetic: true`，**不是真实学生错题**；禁止用于 G1 判定、禁止推断 M1 认可率 / M6 盲评准确率、禁止写进对外材料 |
-| 是否有效 | 离线 prompt 候选使**结构信号单方向改善且契约零代价**，但 `transfer_hint` 仅 4/30、`actionable_hint` 11/30 —— 深度完整度仍是主要缺口 |
+| 是否有效 | 离线 prompt 候选使**结构信号单方向改善且契约零代价**，但 `transfer_hint` 仅 5/30、`actionable_hint` 11/30 —— 深度完整度仍是主要缺口 |
 | 是否接生产 | **否**。`DEFAULT_VARIANT_ID` 仍是 `v0.2b-guard-trap`；`v0.5-depth` 为离线评测专用候选 |
 | 数据主权 | 全程仅 `127.0.0.1:8093` + `NO_PROXY='*'`；未启 3001、未读写 `apps/api/data/aicorrection.db`、未启用联网检索、题干与输出零外发 |
 
@@ -34,23 +35,45 @@
 
 ---
 
-## 2. 词表校准：先拆掉一个自证陷阱（Task #8）
+## 2. 词表校准：两轮，先拆自证陷阱再补非自证样本（Task #8）
 
-新建 `apps/api/src/tests/quality-proxy-calibration.mjs`：84 条构造样本，覆盖 7 类代理量（含 `derivation_blocks` 计数型），算灵敏度 / 特异度，产物落在 `reports/`。
+### 2.0 第一轮：84 条构造样本全 1.0，是循环论证
 
-**首次结果全部 1.0 —— 但这是循环论证**：正样本是照着词表正则写的，全 1.0 只证明「词表能检出最直白的表达」，**不能证明词表在自然表达上够用**。脚本头、报告、`proxy_caveat` 三处都写明了这一点，没有拿 1.0 冒充「校准通过」。
+最初新建 `apps/api/src/tests/quality-proxy-calibration.mjs`：84 条构造样本覆盖 7 类代理量（含 `derivation_blocks` 计数型），灵敏度 / 特异度**全部 1.0**。但**正样本是照着词表正则写的**——全 1.0 只证明「词表能检出最直白的表达」，属循环论证，不能证明词表在自然表达上够用。当时已把该警示写进脚本头、报告与 `proxy_caveat`，没有拿 1.0 冒充「校准通过」。
 
-真正的漏检证据来自**真实语料探测**：用 8093 深度思考档 34 题真题集输出跑同一批代理量，并把 `essence` 置空来模拟修复前口径。
+### 2.0b 第二轮：改用不照词表写的样本（`6358e12` 之后）
+
+失败 worker 复活后并发写入了一套**非自证**样本（84 条，7 类 × 6 正 + 6 负），正样本是自然表达，例如「疏忽大意」「知识掌握得不扎实」「把有序样本当无序组合计数」「把 sinθ 与 cosθ 记反了」「应当保留换元产生的 1/2 系数」。用它测旧词表：
+
+| 代理量 | 旧词表灵敏度 | 旧词表特异度 | 漏检 |
+|---|---|---|---|
+| `cause_has_empty_label` | 66.7% | 100% | 2 |
+| `cause_has_mechanism` | 50% | 100% | 3 |
+| `actionable_hint` | 50% | 100% | 3 |
+| `explains_why` | 50% | 100% | 3 |
+| `transfer_hint` | 50% | 100% | 3 |
+| `structured_ids_present` | 50% | 100% | 3 |
+| `derivation_blocks` | 100% | 100% | 0 |
+
+合计 **17 条漏检、0 条误检、6 类全部未达标** —— 这才是「词表过窄」的实证。据此给 `quality-rubric.mjs` 的 6 组正则补了 17 行（同义空标签、描述「怎么错的」动词短语、常见改错动词、解释标志、迁移表达、结构化 ID 边界），**只改正则，不动判定逻辑、不改返回结构**。补词表后 `--baseline` 前后对照显示 7 类灵敏度与特异度**全部 100%、0 漏检 0 误检**；口径哨兵（「概念混淆」= 空标签词 + 机制词应为 false）与含 `id` 子串的普通词仍被正确拒绝。
+
+> **并发事件如实记录**：该 worker 早前被报「上游流异常失败、零产出」，主理人已接手完成 #8 并提交 `6358e12`；它随后复活并继续原任务，在**提交之后**写入了词表正则与新版校准脚本。主理人核实改动内容、把证据保全到 `reports/concurrent-calibration-dev/`、补跑校准后验证确认达标、量化对 A/B 数字的影响后**决定纳入**，并按 v2 口径重算全部受影响数字，未静默覆盖也未丢弃成果。
+
+### 2.0c 真实语料探测（`apps/api/src/tests/quality-proxy-corpus-probe.mjs`）
+
+构造样本无论多自然仍是人造文本，故第二路证据用 8093 深度思考档 34 题真题集的**真实模型输出**，并把 `essence` 置空模拟修复前口径（v2 词表下）：
 
 | 代理量 | 修复前口径 | 当前口径 | 判读 |
 |---|---|---|---|
-| `actionable_hint` | 2/34 | **6/34** | 部分低命中来自**字段口径**，不是模型完全没写改错指令 |
+| `actionable_hint` | 3/34 | **7/34** | 部分低命中来自**字段口径**，不是模型完全没写改错指令 |
+| `explains_why` | 2/34 | 2/34 | 词表只认显式元话语词，不得读作「模型没讲为什么」 |
+| `cause_has_mechanism` | 22/34 | 22/34 | — |
 | `transfer_hint` | 0/34 | 0/34 | **真实深度缺口**，与口径无关 |
-| `explains_why` | 1/34 | 1/34 | 词表只认显式元话语词，不得读作「模型没讲为什么」 |
-| `cause_has_mechanism` | 21/34 | 21/34 | — |
 | `structured_ids_present` | 0/34 | 0/34 | KPI §6.3.1「`kq_id`/`cause_id` 上线即锁死」的实现缺口 |
+| `contract_complete` | 33/34 | 33/34 | — |
+| `pitfall_section` | 9/34 | 9/34 | — |
 
-新增检出的 4 条 `essence` 原文确属可操作改错指令，例如「必须通过泰勒展开或通分保留足够高阶项才能正确求极限」「必须使用分部积分法 …」。
+新增检出的 4 条 `essence` 原文确属可操作改错指令，例如「必须通过泰勒展开或通分保留足够高阶项才能正确求极限」「必须使用分部积分法 …」。当前口径仍未检出 `actionable_hint` 的条目 **27/34**（词表偏窄 + 模型确实少写，两者不可分开归因）。两路证据互补：构造样本测「检出能力」，真实语料测「字段口径与实际分布」。
 
 ### 2.1 字段口径修复（`quality-rubric.mjs`）
 
@@ -62,7 +85,7 @@
 
 新增 `resolveExpectedCause(caseDoc)`：优先取显式 `expected_cause`；陷阱题标 `not_applicable_trap` 时**直接返回 null、不回退猜测**；否则回退 `extractExpectedCause(provisional_truth)`。合成题集验证：30 题中 18 条拿到真值、4 道陷阱题仍为 null、另 8 道为 `teach` 题本就无错因。
 
-> ⚠️ 口径变更后，**A/B 两侧同口径可比，但与 `ca2c5a8` 首次基线（旧口径）不可直接比较**。
+> ⚠️ 两次口径变更后，**A/B 两侧同口径可比，但与 `ca2c5a8` 首次基线、与 `6358e12` 的第一轮口径（`essence-scope-fix`）均不可直接比较** —— 跨版本数字差异来自量尺，不是模型行为变化。
 
 ---
 
@@ -85,27 +108,29 @@
 
 **基础统计**：`contract_complete` 诊断 22/22、讲解 8/8，两变体均 100%；契约破坏 0 条、`maxTokens` 疑似截断 0 条（`est_tokens` 峰值 477，占 teach 上限 1792 的 26.6%）；latency p50 12664.5 → 12362.5 ms，chars 均值 239.1 → 299.7。
 
-**结构代理量对比**（`scripts/quality-ab-compare.mjs`，口径 `2026-11-07-essence-scope-fix`）：
+**结构代理量对比**（`scripts/quality-ab-compare.mjs`，口径 **`2026-11-07-wordlist-v2`**）：
 
 | 代理量 | `v0.2b-guard-trap` | `v0.5-depth` | Δ | 逐题新增/丢失 |
 |---|---|---|---|---|
 | `contract_complete` | 30/30 | 30/30 | 0 | 0/0 |
 | `cause_has_empty_label` | 0/22 | 0/22 | 0 | 0/0 |
-| `cause_has_mechanism` | 14/22 | 18/22 | **+4** | 4/0 |
+| `cause_has_mechanism` | 15/22 | 18/22 | **+3** | 3/0 |
 | `actionable_hint` | 6/30 | 11/30 | **+5** | 7/2 |
 | `explains_why` | 0/30 | 0/30 | 0 | 0/0 |
 | `pitfall_section` | 8/30 | 8/30 | 0 | 0/0 |
-| `transfer_hint` | 0/30 | **4/30** | **+4** | 4/0 |
+| `transfer_hint` | 0/30 | **5/30** | **+5** | 5/0 |
 | `structured_ids_present` | 0/30 | 0/30 | 0 | 0/0 |
 
-`depth_signal_level` 分布：v0.2b `{L1:7, L2:18, L3:5, L4:0}` → v0.5 `{L1:4, L2:15, L3:10, L4:1}`。
+`depth_signal_level` 分布：v0.2b `{L1:6, L2:19, L3:5, L4:0}` → v0.5 `{L1:4, L2:15, L3:10, L4:1}`。
+
+> 与 `6358e12`（第一轮口径）相比，本表有 3 处变化：`cause_has_mechanism` 基线 14/22→15/22（Δ +4→+3）、`transfer_hint` 的 v0.5 4/30→5/30（Δ +4→+5）、v0.2b 的 L1/L2 `7/18`→`6/19`。**全部来自第二轮补词表，不是模型重跑或行为变化**；两侧始终用同一份词表评分，A/B 内部可比，跨版本不可比。
 
 **陷阱题回归**：4 道 × 2 变体共 8 条错因行，全部为「解法正确，未发现错误」，未出现为追求深度而强行编造错因；两变体一致。
 
 ### 4.1 判读纪律（不可放宽）
 
 - 上表是**结构代理量**，不是质量分。命中率上升只说明「出现了更多该结构信号」，**不等于**归因更触及本质、更能指导改错。
-- `transfer_hint` 从 0 → 4 是本轮最值得注意的信号，但 4/30（13.3%）说明**深度完整度仍是主要缺口**；`actionable_hint` 11/30 且有 2 题丢失，不是纯单向改善。
+- `transfer_hint` 从 0 → 5 是本轮最值得注意的信号，但 5/30（16.7%）说明**深度完整度仍是主要缺口**；`actionable_hint` 11/30 且有 2 题丢失，不是纯单向改善。
 - `explains_why` 对 v0.5 存在**系统性低估**（规则要求把依据写进「本质」段，而该代理量刻意排除 essence 防恒真），0/30 不得读作「v0.5 没讲为什么」。
 - `structured_ids_present` 0/30 是 KPI §6.3.1 的实现缺口，prompt 层解决不了，需产品侧拍板 taxonomy。
 - **不得据本表推断 M1 认可率或 M6 盲评准确率，不构成 G1 闸门证据。**
@@ -126,20 +151,21 @@
 
 | 验证 | 结果 |
 |---|---|
-| 质量量尺单测 `node --test apps/api/src/tests/quality-rubric.test.mjs` | **15/15 pass** |
+| 质量量尺单测 `node --test apps/api/src/tests/quality-rubric.test.mjs` | **16/16 pass**（含第二轮词表边界与口径哨兵） |
 | api 全量单测 `npm run test -w @aicorrection/api` | **75/75 pass** |
 | `npm run typecheck -w @aicorrection/api` | 通过 |
-| 历史门禁回放 `JSON=reports/prompt-ab-8093-think-real-merged.json npm run attrib:regress:real` | `34 \| PASS 27 \| PARTIAL 1 \| FAIL 6 \| 陷阱未瞎编 0/1`，退出码 1 —— **与历史完全一致，代理量改动未渗入 PASS/FAIL 判定** |
-| 校准脚本（含真实语料探测） | 84 样本、人工维度恒 null，产物落于 `reports/` |
+| 历史门禁回放 `JSON=reports/prompt-ab-8093-think-real-merged.json npm run attrib:regress:real` | `34 \| PASS 27 \| PARTIAL 1 \| FAIL 6 \| 陷阱未瞎编 0/1`，退出码 1 —— **两轮词表改动后仍与历史完全一致，代理量未渗入 PASS/FAIL 判定** |
+| 构造样本校准 `quality-proxy-calibration.mjs --baseline <旧词表报告>` | 84 条非自证样本：6 类词表灵敏度 50–66.7% → **7 类全部 100%**、特异度 100%、0 漏检 0 误检 |
+| 真实语料探测 `quality-proxy-corpus-probe.mjs` | 8093 34 题真实输出；`actionable_hint` 口径修复前后 3/34→7/34，`transfer_hint` 前后均 0/34 |
 | A/B 评分脚本输入校验 | 条数 / 30 题 / 唯一组合 / 变体齐全 / ok / synthetic 六项，失败即 `exit 2` |
-| 独立复核（第二层 QA） | 复现 9 项数字逐条一致；故意删 1 条 / 改 `ok=false` 两种破坏副本均 `exit 2` 且未静默出表；口径措辞审查未发现越界 |
+| 独立复核（第二层 QA，第一轮口径） | 复现 9 项数字逐条一致；故意删 1 条 / 改 `ok=false` 两种破坏副本均 `exit 2` 且未静默出表；口径措辞审查未发现越界 |
 
 **独立复核提出的 2 个「不自证」弱点已修复**（当前数据下与事实一致、不影响本次数字，但换输入会失真）：
 
 1. `validation` 的 `err_n` / `ok_false_n` / `synthetic` 原为字面量 → 改为从 `results` / `setDoc` 实算，并补 `per_variant` 计数。
 2. md 的陷阱题题号与「零回归」结论原为硬编码 → 改为从 `trapCauseRows` 逐条实算，新增 `trap_cause_audit`；**只要有一条偏离「解法正确，未发现错误」就列出告警并禁止宣称零回归**。本轮实算 8 条全 clean、deviations 0。
 
-另统一 `latency_p50_ms` 末步舍入为 1 位小数（与合并脚本 `percentile()` 一致），消除 `Math.round` 对 `.5` 向上取整造成的 `12665` vs `12664.5` 跨产物表观差异；分位数算法本身两处相同，均为线性插值 `(n-1)*p`。加固后重跑 9 项代理量数字**逐字未变**。
+另统一 `latency_p50_ms` 末步舍入为 1 位小数（与合并脚本 `percentile()` 一致），消除 `Math.round` 对 `.5` 向上取整造成的 `12665` vs `12664.5` 跨产物表观差异；分位数算法本身两处相同，均为线性插值 `(n-1)*p`。**该加固本身不改变任何代理量数字**；其后第二轮补词表使 3 处数字变化，已按 v2 口径全表重算（见 §4）。
 
 ---
 
@@ -157,8 +183,12 @@
 ## 8. 复现命令
 
 ```bash
-# 词表校准（含真实语料探测）
-node apps/api/src/tests/quality-proxy-calibration.mjs
+# 词表校准（非自证构造样本；--baseline 传旧词表报告可生成前后对照）
+node apps/api/src/tests/quality-proxy-calibration.mjs \
+  --baseline reports/quality-proxy-calibration-2026-11-07T08-38-28-809Z.json
+
+# 真实模型输出上的代理量 / 字段口径探测
+node apps/api/src/tests/quality-proxy-corpus-probe.mjs
 
 # 离线变体 A/B（分片，勿一把梭）
 NO_PROXY='*' no_proxy='*' DISABLE_THINKING=false \

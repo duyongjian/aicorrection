@@ -9,9 +9,11 @@
  * 2. 输入题集是 `synthetic: true` 的**自造校准题集**，不是真实学生错题。
  *    **禁止**用于 G1 闸门判定、**禁止**推断 M1 认可率 / M6 盲评准确率、
  *    **禁止**写进对外材料当作真实样本。
- * 3. 量尺口径版本 RUBRIC_SCOPE 记录在产物里：2026-11-07 修复了字段口径
- *    （actionable_hint / transfer_hint 纳入 essence，explains_why 继续排除防恒真）。
- *    **A/B 两侧同口径可比；与 ca2c5a8 首次基线（旧口径）不可直接比较**。
+ * 3. 量尺口径版本 RUBRIC_SCOPE 记录在产物里：`2026-11-07-wordlist-v2`。
+ *    第一轮修复字段口径（actionable_hint / transfer_hint 纳入 essence，
+ *    explains_why 继续排除防恒真）；第二轮用**不照词表写的**非自证构造样本补词表正则
+ *    （旧 6 类灵敏度 50–66.7% / 17 条漏检 0 误检 → 7 类灵敏度与特异度全部 100%）。
+ *    **A/B 两侧同口径可比；与 ca2c5a8 首次基线、与 6358e12 的第一轮口径均不可直接比较**。
  * 4. 已知不对称：v0.5-depth 要求把「成立的依据」写进「本质」段，而 explains_why
  *    刻意排除 essence 以免「本质/原理」恒真 → 该代理量对 v0.5 存在系统性低估，
  *    其数值差异不得读作「v0.5 没讲为什么」。
@@ -34,7 +36,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '..');
 const REPORT_DIR = path.join(REPO_ROOT, 'reports');
-const RUBRIC_SCOPE = '2026-11-07-essence-scope-fix';
+const RUBRIC_SCOPE = '2026-11-07-wordlist-v2';
 
 const args = process.argv.slice(2);
 function arg(name, fallback) {
@@ -191,7 +193,9 @@ const payload = {
   NOT_formal_baseline:
     '自造校准题集，不是真实学生错题。禁止用于 G1 闸门判定、禁止推断 M1 认可率 / M6 盲评准确率、禁止写进对外材料当作真实样本。',
   scope_note:
-    '只比结构代理量，不产出质量分、不下质量结论。A/B 两侧同口径可比；与 ca2c5a8 首次基线（旧口径）不可直接比较。',
+    '只比结构代理量，不产出质量分、不下质量结论。A/B 两侧同口径可比；' +
+    '与 ca2c5a8 首次基线、与 6358e12 的第一轮口径（essence-scope-fix）均不可直接比较 —— ' +
+    '第二轮补了词表正则，数字差异来自量尺而非模型行为。',
   known_asymmetry:
     'v0.5-depth 要求把「成立的依据」写进「本质」段，而 explains_why 刻意排除 essence 防恒真 → 该代理量对 v0.5 系统性低估。',
   // 全部由 results 实算，不写死 0：校验日后若放宽，validation 也不会与真实数据脱节
@@ -232,7 +236,7 @@ const md = [];
 md.push('# 归因深度候选 A/B：结构代理量对比（合成校准集，非质量评价）');
 md.push('');
 md.push(`- 生成时间：${payload.generated_at}`);
-md.push(`- 量尺口径：\`${RUBRIC_SCOPE}\`（A/B 两侧**同口径可比**；与 ca2c5a8 首次基线的旧口径**不可比**）`);
+md.push(`- 量尺口径：\`${RUBRIC_SCOPE}\`（A/B 两侧**同口径可比**；与 ca2c5a8 首次基线、与 6358e12 第一轮口径均**不可比** —— 第二轮补了词表正则，数字差异来自量尺而非模型行为）`);
 md.push(`- 报告：\`${payload.report}\`；题集：\`${payload.set}\``);
 md.push(`- 校验：${payload.validation.rows} 条 / ${payload.validation.unique_case_ids} 题 / ${payload.validation.unique_combos} 唯一组合 / err ${payload.validation.err_n} / ok=false ${payload.validation.ok_false_n} / essence ${payload.validation.essence_present_n} 条 / 每变体 ${JSON.stringify(payload.validation.per_variant)}`);
 md.push(`- 人工维度恒 null：${payload.human_only_all_null}`);
@@ -285,7 +289,7 @@ md.push('');
 md.push(`- ${payload.known_asymmetry}`);
 md.push('- `transfer_hint` 是 L4 的结构代理；词表检出能力已校准，但**该结构与质量的相关性未校准**。');
 md.push('- `structured_ids_present` 检出的是 KPI §6.3.1「kq_id / cause_id 上线即锁死」的实现缺口，与 prompt 变体无关。');
-md.push('- 构造样本校准全 1.0 属循环论证，只验证检出下限；真实语料探测见 `quality-proxy-calibration.mjs`。');
+md.push('- 第二轮改用**不照词表写的**非自证构造样本：旧 6 类词表灵敏度 50–66.7% / 17 条漏检 0 误检 → 补词表后 7 类灵敏度与特异度全部 100%；真实语料探测见 `quality-proxy-corpus-probe.mjs`。');
 md.push('- 本质分 / 可指导分 / 偏好 / Cohen\'s κ 仍为 `null`，须由 2 人独立盲评产生；本报告不提供任何质量结论。');
 md.push('');
 md.push(`> ${payload.disclaimer}`);
