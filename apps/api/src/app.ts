@@ -22,6 +22,7 @@ import followupRoutes from './routes/followupRoutes';
 import reviewRoutes from './routes/reviewRoutes';
 import trackingRoutes from './routes/trackingRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
+import loopRoutes from './routes/loopRoutes';
 import licenseRoutes from './routes/licenseRoutes';
 import authRoutes from './routes/authRoutes';
 import learnRoutes from './routes/practiceRoutes';
@@ -173,6 +174,7 @@ export function createApp() {
   app.use(`${base}/review`, reviewRoutes);
   app.use(`${base}/track`, trackingRoutes);
   app.use(`${base}/dashboard`, dashboardRoutes);
+  app.use(`${base}/loop`, loopRoutes);
 
   // 生产态：托管前端静态资源（SPA 回退，排除 /api 避免吞掉未知 API 404）
   const webDist = path.resolve(__dirname, '../../web/dist');

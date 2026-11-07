@@ -265,6 +265,16 @@ export function useLoop() {
     []
   );
 
+  const completeLoop = useCallback(
+    async (): Promise<void> => {
+      const l = useLoopStore.getState().loop;
+      const uid = useLoopStore.getState().anonUserId;
+      if (!l || !uid) throw new Error('no loop');
+      await api.completeLoop({ loop_id: l.loop_id, anon_user_id: uid });
+    },
+    []
+  );
+
   return {
     anonUserId,
     segment,
@@ -276,6 +286,7 @@ export function useLoop() {
     runAttribution,
     rate,
     followup,
+    completeLoop,
     resetLoop,
     error,
   };

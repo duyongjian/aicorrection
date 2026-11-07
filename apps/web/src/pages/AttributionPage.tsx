@@ -16,8 +16,10 @@ type Status = 'idle' | 'loading' | 'ok' | 'analyzing' | 'incomplete' | 'error';
 /** R02 + R03 归因展示 + 认可 / 追问；无进行中归因时回退展示历史（FLW-02）。 */
 export default function AttributionPage() {
   const navigate = useNavigate();
-  const { loop, attribution, runAttribution, rate, followup, resetLoop, error, anonUserId } =
+  const { loop, attribution, runAttribution, rate, followup, completeLoop, resetLoop, error, anonUserId } =
     useLoop();
+  const [completed, setCompleted] = useState(false);
+  const [completeErr, setCompleteErr] = useState('');
 
   const [status, setStatus] = useState<Status>('idle');
   const [showFollowup, setShowFollowup] = useState(false);
@@ -239,13 +241,34 @@ export default function AttributionPage() {
               {loop && anonUserId && (
                 <LoopPracticePanel loopId={loop.loop_id} anonUserId={anonUserId} />
               )}
+              {completed && (
+                <Alert severity="success">闭环已标记完成。</Alert>
+              )}
+              {completeErr && (
+                <Alert severity="error">{completeErr}</Alert>
+              )}
+              <Button
+                variant="contained"
+                onClick={async () => {
+                  try {
+                    await completeLoop();
+                    setCompleted(true);
+                    setCompleteErr('');
+                  } catch (e) {
+                    setCompleteErr((e as Error).message || '完成闭环失败');
+                  }
+                }}
+                disabled={completed}
+              >
+                {completed ? '已闭环' : '完成闭环'}
+              </Button>
               <Button
                 onClick={() => {
                   resetLoop();
                   navigate('/');
                 }}
               >
-                完成 / 返回上传
+                返回上传
               </Button>
             </Stack>
           )}

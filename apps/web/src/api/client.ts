@@ -262,6 +262,37 @@ export const api = {
     return http.post('/learn/verify', body).then((r) => r.data.data);
   },
 
+  // ===== v0.3 闭环会话流（R07 完成闭环 / 状态聚合） =====
+  completeLoop(body: {
+    loop_id: string;
+    anon_user_id: string;
+  }): Promise<{
+    loop_id: string;
+    loop_complete: boolean;
+    progress: number;
+    has_upload: boolean;
+    has_attribution: boolean;
+    rated: boolean;
+    has_practice: boolean;
+    has_restate: boolean;
+    has_verify: boolean;
+  }> {
+    return http.post('/loop/complete', body).then((r) => r.data.data);
+  },
+  getLoopSummary(loopId: string): Promise<{
+    loop_id: string;
+    loop_complete: boolean;
+    progress: number;
+    has_upload: boolean;
+    has_attribution: boolean;
+    rated: boolean;
+    has_practice: boolean;
+    has_restate: boolean;
+    has_verify: boolean;
+  }> {
+    return http.get(`/loop/${loopId}`).then((r) => r.data.data);
+  },
+
   // ===================== 真实账号体系（v0.2 地基） =====================
 
   /** 邮箱密码注册：返回 auth_token 与已绑定的匿名身份。 */

@@ -19,6 +19,7 @@ import type {
   UploadFailureBreakdown,
   UploadFailureBucket,
 } from '@aicorrection/shared';
+import { computeLoopHealth, type LoopHealth } from './loopService';
 
 function round(n: number, digits = 4): number {
   const f = Math.pow(10, digits);
@@ -197,4 +198,9 @@ export function computeUploadFailureBreakdown(
     by_reason: toBuckets(byReason),
     by_stage_reason: toBuckets(byStageReason),
   };
+}
+
+/** v0.3 防刷护栏：闭环健康度（完成率/中位时长/单日异常），仅采集信号不拦截。 */
+export function computeLoopHealthSafe(windowDays = 14): LoopHealth {
+  return computeLoopHealth(windowDays);
 }

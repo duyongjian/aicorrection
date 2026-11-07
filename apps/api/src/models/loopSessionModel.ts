@@ -34,3 +34,17 @@ export function incrementFollowupRounds(loop_id: string): void {
     )
     .run(loop_id);
 }
+
+/** R07 闭环完成：标记完成时间 + 中位时长（now - start_ts）。 */
+export function completeLoopSession(loop_id: string): void {
+  const session = getLoopSession(loop_id);
+  if (!session) return;
+  const startMs = new Date(session.start_ts.replace(' ', 'T') + 'Z').getTime();
+  const now = Date.now();
+  const durationMs = Number.isFinite(startMs) ? now - startMs : 0;
+  getDb()
+    .prepare(
+      `UPDATE loop_sessions SET loop_complete = 1, complete_ts = ?, duration_ms = ? WHERE loop_id = ?`
+    )
+    .run(new Date(now).toISOString(), durationMs, loop_id);
+}

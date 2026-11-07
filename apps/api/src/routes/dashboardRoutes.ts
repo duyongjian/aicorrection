@@ -5,7 +5,11 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import { computeM1, computeUploadFailureBreakdown } from '../services/dashboardService';
+import {
+  computeM1,
+  computeUploadFailureBreakdown,
+  computeLoopHealthSafe,
+} from '../services/dashboardService';
 import { ok } from '../utils/result';
 
 const router = Router();
@@ -26,6 +30,15 @@ router.get('/m1', (req, res, next) => {
 router.get('/upload-failures', (req, res, next) => {
   try {
     const stats = computeUploadFailureBreakdown(parseWindowDays(req.query.window_days));
+    res.json(ok(stats));
+  } catch (e) {
+    next(e);
+  }
+});
+
+router.get('/loop-health', (req, res, next) => {
+  try {
+    const stats = computeLoopHealthSafe(parseWindowDays(req.query.window_days));
     res.json(ok(stats));
   } catch (e) {
     next(e);
