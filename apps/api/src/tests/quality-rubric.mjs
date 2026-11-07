@@ -127,6 +127,21 @@ export function extractExpectedCause(truth) {
   return m ? m[1].trim() : null;
 }
 
+/**
+ * 取题集声明的预期错因（**仅用于报告展示，不参与任何判定**）。
+ * 优先显式 `expected_cause`；陷阱题显式标 `not_applicable_trap` 时直接返回 null，
+ * 不得回退到 provisional_truth 去猜；否则回退「错因：」片段抽取，仍无则 null。
+ *
+ * 动机：合成题集 quality-calibration-v1.json 的多数 provisional_truth 没有
+ * 「错因：」前缀（改为独立 expected_cause 字段），旧逻辑会把它们全抽成 null。
+ */
+export function resolveExpectedCause(caseDoc = {}) {
+  const explicit = caseDoc?.expected_cause;
+  if (typeof explicit === 'string' && explicit.trim()) return explicit.trim();
+  if (caseDoc?.expected_cause_status === 'not_applicable_trap') return null;
+  return extractExpectedCause(caseDoc?.provisional_truth);
+}
+
 // ── 主评估 ──────────────────────────────────────────────────────────────────
 
 /**
@@ -144,6 +159,18 @@ export function evaluateQualitySignals(result, caseDoc = {}) {
   const pitfalls = String(fields.pitfalls || '');
   // narrative 排除 knowledge_point / essence 字段，避免"本质段必然含本质词"造成恒真
   const narrative = [cause, derivation, pitfalls].filter(Boolean).join('\n');
+  // 字段口径（2026-11-07 真实语料探测后修订）：
+  // - actionable_hint / transfer_hint 用 actionNarrative（含 essence）。这两个词表不含
+  //   「本质 / 原理」等元话语词，纳入不会恒真；而「本质」段恰恰是模型写改错指令与
+  //   迁移提示的主要位置（探针：8093 34 题 actionable_hint 2/34 → 6/34）。
+  //   尤其 v0.5-depth 明确要求把「同类变式」写进「本质」/「常见陷阱」，
+  //   若继续排除 essence，A/B 会把真实提升误读成 0。
+  // - explains_why 刻意继续排除 essence：其词表含 /本质(上|是|在于)/、/原理/，
+  //   而 v0.5-depth 要求模型在「本质」段写成立的依据，纳入会造恒真假指标。
+  //   探针显示排除代价可控（1/34 → 纳入后 2/34）。
+  // - transfer_hint 纳入前后均 0/34，说明「变式 0」是真实深度缺口，不是口径造成。
+  const essence = String(fields.essence || '');
+  const actionNarrative = [narrative, essence].filter(Boolean).join('\n');
 
   const isDiagnose = mode === 'diagnose';
   const contractComplete = isDiagnose ? Boolean(fields.hasThree) : Boolean(fields.hasCore);
@@ -155,11 +182,11 @@ export function evaluateQualitySignals(result, caseDoc = {}) {
       ? (hasAny(cause, EMPTY_CAUSE_LABELS) && !hasAny(cause, MECHANISM_PATTERNS))
       : null,
     cause_has_mechanism: isDiagnose && cause ? hasAny(cause, MECHANISM_PATTERNS) : null,
-    actionable_hint: narrative ? hasAny(narrative, ACTIONABLE_PATTERNS) : false,
+    actionable_hint: actionNarrative ? hasAny(actionNarrative, ACTIONABLE_PATTERNS) : false,
     explains_why: narrative ? hasAny(narrative, EXPLAIN_WHY_PATTERNS) : false,
     derivation_blocks: isDiagnose ? 0 : countDerivationBlocks(derivation),
     pitfall_section: pitfalls.trim().length > 0,
-    transfer_hint: narrative ? hasAny(narrative, TRANSFER_PATTERNS) : false,
+    transfer_hint: actionNarrative ? hasAny(actionNarrative, TRANSFER_PATTERNS) : false,
     structured_ids_present: STRUCTURED_ID_PATTERN.test(rawText),
   };
   signals.depth_signal_level = deriveDepthSignalLevel(signals);
@@ -175,7 +202,7 @@ export function evaluateQualitySignals(result, caseDoc = {}) {
     ...signals,
     depth_target: depthTarget,
     depth_target_status: depthTarget ? 'set' : 'unspecified',
-    expected_cause: extractExpectedCause(caseDoc?.provisional_truth),
+    expected_cause: resolveExpectedCause(caseDoc),
     review_required: true,
     // 人工维度恒为 null：机器绝不给本质分 / 可指导分
     human_only: Object.fromEntries(HUMAN_ONLY_DIMENSIONS.map((k) => [k, null])),
@@ -222,9 +249,14 @@ export function summarizeQuality(signals) {
       toolchain: 'npm run blind:export → 2 名评分人独立填 CSV → npm run blind:score',
     },
     proxy_caveat:
-      '代理量由固定词表/正则命中得出，灵敏度与特异度**均未校准**：命中 ≠ 质量达标，未命中 ≠ 质量差。' +
-      '例如 explains_why 只检查推导/错因/陷阱正文（刻意排除 essence 字段以免恒真），低命中率首先应怀疑词表过窄，' +
-      '不得直接读作「模型没讲为什么」。校准须靠人工盲评样本对照，本模块不提供校准结论。',
+      '代理量由固定词表/正则命中得出；已完成「词表检出能力」校准（见 quality-proxy-calibration.mjs），' +
+      '但校准对象是**能否检出该结构信号**，不是「该结构能否预测归因质量」：命中 ≠ 质量达标，未命中 ≠ 质量差。' +
+      '构造样本只验证检出下限（全 1.0 属循环论证，不构成「词表无问题」的证据）；' +
+      '真实语料探测（8093 深度思考档 34 题）显示 actionable_hint 2/34 → 纳入 essence 后 6/34，' +
+      '说明部分低命中来自字段口径；transfer_hint 纳入前后均 0/34，属真实深度缺口。' +
+      'explains_why 刻意只检查推导/错因/陷阱正文（排除 essence 以免「本质/原理」恒真），' +
+      '且词表只认显式元话语词，1/34 不得读作「模型没讲为什么」。' +
+      '本质分 / 可指导分 / 偏好 / κ 仍须人工盲评，本模块不提供质量结论。',
     disclaimer:
       '本汇总只含结构代理量，代理量命中 ≠ 归因质量达标；本质分 / 可指导分 / 偏好 / κ 必须由人工盲评产生，' +
       '不得据本汇总推断 M1 认可率或 M6 盲评准确率。',

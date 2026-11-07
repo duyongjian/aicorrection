@@ -14,6 +14,7 @@ import {
   buildReviewQueue,
   deriveDepthSignalLevel,
   extractExpectedCause,
+  resolveExpectedCause,
   HUMAN_ONLY_DIMENSIONS,
   DEPTH_LEVELS,
   MACHINE_PROXY_KEYS,
@@ -25,8 +26,9 @@ function diag(overrides = {}) {
     mode: 'diagnose',
     variant: 'v0.2b-guard-trap',
     trap: false,
-    text: '错因：粗心\n知识点：等价无穷小\n本质：需展开到足够阶',
-    fields: { cause: '粗心', knowledge_point: '等价无穷小', essence: '需展开到足够阶', hasThree: true },
+    // essence 刻意不含任何改错/迁移/解释词：本 fixture 用于检验「纯空标签 → L1」
+    text: '错因：粗心\n知识点：等价无穷小\n本质：该知识点属于极限计算',
+    fields: { cause: '粗心', knowledge_point: '等价无穷小', essence: '该知识点属于极限计算', hasThree: true },
     ...overrides,
   };
 }
@@ -145,8 +147,9 @@ test('summarizeQuality 汇总比例、未标定计数与人工待评状态', () 
   assert.equal(s.review_queue_size, 3);
   assert.equal(s.human_only.status, 'PENDING_HUMAN_BLIND_REVIEW');
   assert.equal(s.human_only.values, null);
-  assert.match(s.proxy_caveat, /未校准/);
-  assert.match(s.proxy_caveat, /未命中 ≠ 质量差/);
+  assert.match(s.proxy_caveat, /已完成「词表检出能力」校准/);
+  assert.match(s.proxy_caveat, /命中 ≠ 质量达标/);
+  assert.match(s.proxy_caveat, /本模块不提供质量结论/);
   assert.match(s.disclaimer, /不得据本汇总推断 M1/);
 });
 
@@ -188,4 +191,90 @@ test('接线不破坏 auto-eval 原有判定导出（历史回放零变化的前
   const b = autoEval.scoreResult(r, ctx);
   assert.deepEqual(a, b);
   assert.ok(['PASS', 'PARTIAL', 'FAIL'].includes(a.verdict));
+});
+
+test('字段口径：actionable_hint / transfer_hint 纳入 essence，explains_why 排除以免恒真', () => {
+  // 「本质」段是模型写改错指令与迁移提示的主要位置；v0.5-depth 明确要求写进这里。
+  // 但 explains_why 词表含 /本质(上|是|在于)/，纳入会让该代理量恒真 → 必须继续排除。
+  const r = diag({
+    text: '错因：乘积求导少一项\n知识点：x\n本质：必须通过泰勒展开到三阶',
+    fields: {
+      cause: '乘积求导少一项',
+      knowledge_point: 'x',
+      essence: '必须通过泰勒展开到三阶；推广到更高阶相减情形同样适用。本质是精度不够',
+      hasThree: true,
+    },
+  });
+  const s = evaluateQualitySignals(r, {});
+  assert.equal(s.actionable_hint, true, 'essence 里的改错指令必须被检出');
+  assert.equal(s.transfer_hint, true, 'essence 里的迁移提示必须被检出');
+  assert.equal(s.explains_why, false, 'essence 里的「本质是」不得造成 explains_why 恒真');
+
+  // 把 essence 清空 → 两个代理量回到修复前口径（模拟回归）
+  const stripped = diag({
+    text: '错因：乘积求导少一项\n知识点：x\n本质：',
+    fields: { cause: '乘积求导少一项', knowledge_point: 'x', essence: '', hasThree: true },
+  });
+  const s0 = evaluateQualitySignals(stripped, {});
+  assert.equal(s0.actionable_hint, false);
+  assert.equal(s0.transfer_hint, false);
+});
+
+test('口径修复副作用：essence 含改错指令会把结构等级由 L1 抬到 L2（预期，不是回归）', () => {
+  const plain = evaluateQualitySignals(diag(), {});
+  assert.equal(plain.actionable_hint, false);
+  assert.equal(plain.depth_signal_level, 'L1');
+
+  const withHint = evaluateQualitySignals(diag({
+    fields: {
+      cause: '粗心', knowledge_point: '等价无穷小',
+      essence: '应展开到三阶再代入', hasThree: true,
+    },
+  }), {});
+  assert.equal(withHint.actionable_hint, true);
+  assert.equal(withHint.depth_signal_level, 'L2');
+  // 口径变更后历史基线不可直接比较；A/B 两侧必须用同一口径重跑
+  assert.equal(withHint.explains_why, false, 'explains_why 仍不得因 essence 恒真');
+});
+
+test('resolveExpectedCause 优先显式字段、陷阱题不回退猜测、否则回退「错因：」抽取', () => {
+  assert.equal(
+    resolveExpectedCause({ expected_cause: '漏掉 $uv\'$ 项', provisional_truth: '错因：不应采信此句' }),
+    '漏掉 $uv\'$ 项',
+  );
+  assert.equal(
+    resolveExpectedCause({
+      expected_cause: null,
+      expected_cause_status: 'not_applicable_trap',
+      provisional_truth: '错因：陷阱题里即使写了这句也不得回退猜测',
+    }),
+    null,
+  );
+  assert.equal(
+    resolveExpectedCause({ provisional_truth: '正确答案为 1/2。错因：对相减的分子不能直接代换。' }),
+    '对相减的分子不能直接代换',
+  );
+  assert.equal(resolveExpectedCause({}), null);
+  assert.equal(resolveExpectedCause({ expected_cause: '   ' }), null);
+});
+
+test('evaluateQualitySignals 用 resolveExpectedCause 填入展示字段', () => {
+  const c = {
+    id: 'qm01', trap: false,
+    expected_cause: '把乘积求导法则误记为 $(uv)\'=u\'v\'$',
+    provisional_truth: '没有「错因：」前缀的真值文本',
+    depth_target: 'L3',
+  };
+  const s = evaluateQualitySignals({ mode: 'diagnose', case_id: 'qm01', text: '', fields: { hasThree: true } }, c);
+  assert.equal(s.expected_cause, '把乘积求导法则误记为 $(uv)\'=u\'v\'$');
+  assert.equal(s.depth_target, 'L3');
+
+  const trap = {
+    id: 'qm11', trap: true, expected_cause: null,
+    expected_cause_status: 'not_applicable_trap',
+    provisional_truth: '错因：这句不该被抽出来',
+  };
+  const st = evaluateQualitySignals({ mode: 'diagnose', case_id: 'qm11', text: '', fields: { hasThree: true } }, trap);
+  assert.equal(st.trap, true);
+  assert.equal(st.expected_cause, null);
 });

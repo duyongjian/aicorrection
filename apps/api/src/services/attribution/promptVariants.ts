@@ -505,6 +505,41 @@ const V02D_MONOTONIC_PREFIX: PromptVariant = {
   maxTokens: { ...V02B_GUARD_TRAP.maxTokens },
 };
 
+/**
+ * v0.5-depth：离线评测专用候选，**不接生产**（DEFAULT_VARIANT_ID 仍为 v0.2b）。
+ *
+ * 动机（2026-11-07，A 层质量量尺首次基线）：8093 深度思考档 34 题门禁里
+ * 「可操作改错」2/34、「解释为什么」1/34、「迁移/变式」0/34，结构等级
+ * L1/L2/L3/L4 = 5/26/3/0。注意这些是**未校准的词表代理量**，低命中不等于
+ * 质量差；本变体只用来验证一个可证伪的假设：在不动契约、不动 tail、
+ * 不动 maxTokens 的前提下，仅靠 system 追加「写机制 + 给改错指令 + 给变式」
+ * 的要求，能否让结构信号上升，以及是否以破坏契约 / 诱发强行找错为代价。
+ *
+ * A/B 单变量保证：完全复用 V02B 的 system，仅在末尾追加同一条深度规则；
+ * tail、maxTokens、题集、模型、温度全部一致。规则**不新增任何标记行或段落**，
+ * diagnose 仍恰好三行、teach 仍五段，以保证 parseAttrTriple / parseTeaching
+ * 与 hasThree / hasCore 的口径不变。
+ */
+const DEPTH_RULE = `【归因深度完整度（在不改变输出结构的前提下执行）】
+本规则不新增任何段落或标记行：诊断仍恰好三行、讲解仍五段，字数上限不变。请把有限篇幅优先用在下面四点：
+- 写机制而非贴标签：错因（讲解见「常见陷阱」）必须说明「这一步为什么会导致错误结果」，写清中间环节；严禁只用"粗心""概念不清""基础不牢""计算失误"等空泛标签收尾。
+- 给一条可操作改错指令：在同一行 / 同一段内写清下次遇到同类题「先做什么、改用哪个法则、代入什么」，例如"应先用……再……""须把……改为……"。
+- 讲清依据：在「本质」里点明该知识点成立的条件或定理依据，而不只是复述结论。
+- 迁移提示：若篇幅允许，在「本质」或「常见陷阱」末尾用一句话点出同类变式或可迁移的判据（如"推广到……时同样……"）；不得以写不下为由新增段落。
+【陷阱题例外（最高优先级）】若独立核验后学生作答本身正确，上述"写机制 / 给改错指令"两条不适用：仍按第一步固定写法输出"错因：解法正确，未发现错误"，严禁为追求深度而编造错误；此时只需在「本质」里写明该解法成立的依据。`;
+
+const V05_DEPTH: PromptVariant = {
+  id: 'v0.5-depth',
+  label: '归因深度完整度（机制+改错+迁移，仅离线）',
+  hypothesis: '只追加深度规则、不动契约/tail/maxTokens，能否提升结构代理量（机制/改错/变式）而不破坏三行五段与陷阱题防瞎编',
+  system: {
+    diagnose: `${V02B_GUARD_TRAP.system.diagnose}\n\n${DEPTH_RULE}`,
+    teach: `${V02B_GUARD_TRAP.system.teach}\n\n${DEPTH_RULE}`,
+  },
+  tail: V02B_GUARD_TRAP.tail,
+  maxTokens: { ...V02B_GUARD_TRAP.maxTokens },
+};
+
 export const PROMPT_VARIANTS: Record<string, PromptVariant> = {
   [V01.id]: V01,
   [V01_STRICT.id]: V01_STRICT,
@@ -513,6 +548,7 @@ export const PROMPT_VARIANTS: Record<string, PromptVariant> = {
   [V02B_GUARD_TRAP.id]: V02B_GUARD_TRAP,
   [V02C_MONOTONIC_CHECK.id]: V02C_MONOTONIC_CHECK,
   [V02D_MONOTONIC_PREFIX.id]: V02D_MONOTONIC_PREFIX,
+  [V05_DEPTH.id]: V05_DEPTH,
   [V03_GUARD3.id]: V03_GUARD3,
   [V04_CAREFUL.id]: V04_CAREFUL,
 };
@@ -530,8 +566,9 @@ export const PROMPT_VARIANTS: Record<string, PromptVariant> = {
  * ⚠️ 澄清（2026-11-06）：本常量只是**评测脚手架的默认变体**，并非生产在用配置。
  * `attributionService.ts` 仍硬编码 `ATTR_SYSTEM` / `ATTR_SYSTEM_NOANSWER`（等价 v0.1），
  * 全仓除本文件外无生产代码引用 `PROMPT_VARIANTS` / `DEFAULT_VARIANT_ID`。
- * 注册表中的 `v0.2c-monotonic-check`、`v0.2d-monotonic-prefix` 为**离线评测专用候选**
- * （验证 9B「答案行增/减写反」能否靠 prompt 修掉），**禁止接入生产**；G1 未过前 v0.2 全线冻结。
+ * 注册表中的 `v0.2c-monotonic-check`、`v0.2d-monotonic-prefix`（验证 9B「答案行增/减写反」
+ * 能否靠 prompt 修掉）与 `v0.5-depth`（验证归因深度结构信号能否靠 prompt 提升）均为
+ * **离线评测专用候选**，**禁止接入生产**；G1 未过前 v0.2 全线冻结。
  */
 export const DEFAULT_VARIANT_ID = V02B_GUARD_TRAP.id;
 
