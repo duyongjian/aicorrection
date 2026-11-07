@@ -64,6 +64,10 @@ import type {
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
   SubscriptionView,
+  QualityScorecard,
+  StrataReportResponse,
+  CalibrationRequest,
+  CalibrationResponse,
 } from '@aicorrection/shared';
 
 /**
@@ -539,5 +543,22 @@ export const api = {
     return http
       .post('/license/subscription/cancel', { anon_user_id: anonUserId })
       .then((r) => r.data.data);
+  },
+
+  // ===================== 质量优化（G1 闸门 / B·C·D 分层 / 代理↔质量校准） =====================
+
+  /** G1 质量闸门：聚合 M1 / 闭环健康 / 盲评覆盖，给出可发布判定。 */
+  getQualityGate(windowDays = 14): Promise<QualityScorecard> {
+    return http.get(`/quality/gate?windowDays=${windowDays}`).then((r) => r.data.data);
+  },
+
+  /** B·C·D 分层报告：各知识点分层与各层盲评覆盖。 */
+  getStrataReport(): Promise<StrataReportResponse> {
+    return http.get('/quality/strata').then((r) => r.data.data);
+  },
+
+  /** 代理↔质量校准：代理自报分按置信度收敛到先验，输出保守校准分。 */
+  calibrateQuality(req: CalibrationRequest): Promise<CalibrationResponse> {
+    return http.post('/quality/calibrate', req).then((r) => r.data.data);
   },
 };

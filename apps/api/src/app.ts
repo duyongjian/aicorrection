@@ -23,6 +23,7 @@ import reviewRoutes from './routes/reviewRoutes';
 import trackingRoutes from './routes/trackingRoutes';
 import dashboardRoutes from './routes/dashboardRoutes';
 import loopRoutes from './routes/loopRoutes';
+import qualityRoutes from './routes/qualityRoutes';
 import licenseRoutes from './routes/licenseRoutes';
 import authRoutes from './routes/authRoutes';
 import learnRoutes from './routes/practiceRoutes';
@@ -175,6 +176,8 @@ export function createApp() {
   app.use(`${base}/track`, trackingRoutes);
   app.use(`${base}/dashboard`, dashboardRoutes);
   app.use(`${base}/loop`, loopRoutes);
+  // 质量优化看板：G1 闸门 / B·C·D 分层 / 代理↔质量校准（运营/质量评估用，受门禁保护）
+  app.use(`${base}/quality`, qualityRoutes);
 
   // 生产态：托管前端静态资源（SPA 回退，排除 /api 避免吞掉未知 API 404）
   const webDist = path.resolve(__dirname, '../../web/dist');

@@ -191,6 +191,41 @@ export const FREE_DAILY_LOOP_QUOTA = 5;
 /** 支付 provider 未配置时的错误码（与 AUTH_PROVIDER_NOT_CONFIGURED 对称） */
 export const PAYMENT_PROVIDER_ENV = 'PAYMENT_PROVIDER';
 
+// ===================== 质量优化：G1 闸门 / B·C·D 分层 / 代理↔质量校准 =====================
+
+/**
+ * G1 质量闸门阈值（冻结）。
+ * 每项检查带 severity：blocker 不达标则整体不通过（不可发布）；warning 仅提示。
+ * 阈值设定依据：approval_rate 复用 M1 闸门 0.70；三件套完整率与闭环完成率为产品健康底线；
+ * 盲评覆盖率确保正式盲评（QAL-01）有足够样本支撑质量结论。
+ */
+export const G1_GATE_THRESHOLDS = {
+  approval_rate: { comparator: 'min' as const, threshold: 0.7, severity: 'blocker' as const, label: '归因认可率' },
+  three_item_rate: { comparator: 'min' as const, threshold: 0.8, severity: 'warning' as const, label: '三件套完整率' },
+  upload_fail_rate: { comparator: 'max' as const, threshold: 0.05, severity: 'warning' as const, label: '上传失败率' },
+  completion_rate: { comparator: 'min' as const, threshold: 0.5, severity: 'warning' as const, label: '闭环完成率' },
+  review_coverage: { comparator: 'min' as const, threshold: 0.3, severity: 'warning' as const, label: '盲评覆盖率' },
+} as const;
+
+/** 质量分层（B·C·D 评估集）：A 通用 / B 边界 / C 极端罕见 / D 干扰陷阱。 */
+export const QUALITY_STRATA = ['A', 'B', 'C', 'D'] as const;
+export type QualityStratum = (typeof QUALITY_STRATA)[number];
+
+/** 分层标签（前端展示）。 */
+export const STRATUM_LABELS: Record<QualityStratum, string> = {
+  A: '通用题',
+  B: '边界题',
+  C: '极端/罕见题',
+  D: '干扰/陷阱题',
+};
+
+/** 校准先验：代理无置信度时回落到 0.5（不乐观、不悲观）。 */
+export const CALIBRATION_PRIOR = 0.5;
+
+/** 触发 D 层（干扰陷阱）的「常见误解」错因；触发 C 层（极端罕见）的「罕见错因」。 */
+export const MISCONCEPTION_CAUSES = ['concept_confusion', 'method_error'] as const;
+export const RARE_CAUSES = ['memory_gap', 'reading_error'] as const;
+
 // ===================== P1 强化期（R09 错因聚合 / R14 掌握判定） =====================
 
 /**

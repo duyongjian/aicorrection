@@ -14,6 +14,7 @@ import type {
   CauseId,
   LicenseTier,
   Entitlement,
+  QualityStratum,
 } from './constants';
 
 // ===================== 灰度/金丝雀发布（K1.4） =====================
@@ -577,6 +578,64 @@ export interface UploadFailureBreakdown {
   by_stage: UploadFailureBucket[];
   by_reason: UploadFailureBucket[];
   by_stage_reason: UploadFailureBucket[];
+}
+
+// ===================== 质量优化：G1 闸门 / B·C·D 分层 / 校准 =====================
+
+/** 单条质量检查结果 */
+export interface QualityCheck {
+  name: string;
+  label: string;
+  value: number;
+  /** 阈值含义：min=值需≥阈值；max=值需≤阈值 */
+  comparator: 'min' | 'max';
+  threshold: number;
+  pass: boolean;
+  severity: 'blocker' | 'warning';
+  detail: string;
+}
+
+/** G1 质量闸门聚合报告 */
+export interface QualityScorecard {
+  passed: boolean;
+  /** 综合分 0–1：blocker 权重 2、warning 权重 1 */
+  score: number;
+  readiness: 'ship' | 'hold';
+  checks: QualityCheck[];
+  blockers: string[];
+  warnings: string[];
+  generated_at: string;
+  window: string;
+}
+
+/** 单知识点分层统计 */
+export interface StratumReport {
+  stratum: QualityStratum;
+  label: string;
+  kp_count: number;
+  reviewed_count: number;
+  /** 该层盲评覆盖率 0–1 */
+  coverage: number;
+}
+
+export interface StrataReportResponse {
+  items: StratumReport[];
+  total_kp: number;
+}
+
+/** 代理↔质量校准请求/响应 */
+export interface CalibrationRequest {
+  /** 代理自报质量分 0–1 */
+  raw_score: number;
+  /** 代理置信度 0–1 */
+  confidence: number;
+}
+export interface CalibrationResponse {
+  raw_score: number;
+  confidence: number;
+  prior: number;
+  /** 校准后质量分（单调、保守，不会超过 raw_score） */
+  calibrated: number;
 }
 
 // ===================== 真实账号体系 (auth) =====================
