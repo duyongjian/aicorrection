@@ -162,7 +162,7 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
             width: '100%',
             maxWidth: 420,
             p: 3,
-            borderRadius: 4,
+            borderRadius: '4px',
             bgcolor: 'background.paper',
             boxShadow: '0 12px 40px rgba(31,36,48,0.12)',
           }}

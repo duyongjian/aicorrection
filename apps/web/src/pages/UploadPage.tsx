@@ -199,7 +199,7 @@ export default function UploadPage() {
                       sx={{
                         maxWidth: '100%',
                         maxHeight: 240,
-                        borderRadius: 1,
+                        borderRadius: '1px',
                         border: '1px solid',
                         borderColor: 'divider',
                         display: 'block',

@@ -46,21 +46,21 @@ export const theme = createTheme({
     MuiButton: {
       defaultProps: { disableElevation: true },
       styleOverrides: {
-        root: { textTransform: 'none', fontWeight: 600, borderRadius: 10, paddingInline: 18 },
+        root: { textTransform: 'none', fontWeight: 600, borderRadius: '10px', paddingInline: 18 },
         containedPrimary: { boxShadow: '0 6px 16px rgba(79,70,229,0.28)' },
       },
     },
-    MuiCard: { styleOverrides: { root: { borderRadius: 18, border: '1px solid rgba(31,36,48,0.06)' } } },
+    MuiCard: { styleOverrides: { root: { borderRadius: '18px', border: '1px solid rgba(31,36,48,0.06)' } } },
     MuiPaper: {
       styleOverrides: {
-        rounded: { borderRadius: 18 },
+        rounded: { borderRadius: '18px' },
         outlined: { borderColor: 'rgba(31,36,48,0.08)' },
       },
     },
     MuiListItemButton: {
       styleOverrides: {
         root: {
-          borderRadius: 12,
+          borderRadius: '12px',
           marginInline: 8,
           '&.Mui-selected': {
             backgroundColor: 'rgba(79,70,229,0.10)',

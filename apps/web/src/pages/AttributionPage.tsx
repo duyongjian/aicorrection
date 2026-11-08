@@ -118,7 +118,7 @@ export default function AttributionPage() {
                   maxWidth: '100%',
                   maxHeight: 320,
                   objectFit: 'contain',
-                  borderRadius: 1,
+                  borderRadius: '1px',
                   border: '1px solid',
                   borderColor: 'divider',
                   display: 'block',

@@ -198,7 +198,7 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, segmen
       disableEscapeKeyDown={blocking}
       fullWidth
       maxWidth="sm"
-      PaperProps={{ sx: { borderRadius: 20, overflow: 'hidden' } }}
+      PaperProps={{ sx: { borderRadius: '20px', overflow: 'hidden' } }}
     >
       {/* 标题栏 */}
       <Box
@@ -459,7 +459,7 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, segmen
             <Box
               sx={{
                 p: 2,
-                borderRadius: 3,
+                borderRadius: '3px',
                 background: 'linear-gradient(135deg, rgba(79,70,229,0.08), rgba(14,165,233,0.08))',
                 border: '1px solid rgba(79,70,229,0.15)',
               }}

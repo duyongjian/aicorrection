@@ -166,7 +166,7 @@ export default function AppShell({ children, onOpenAccount, identity }: AppShell
         <ListItemButton
           onClick={onOpenAccount}
           sx={{
-            borderRadius: 14,
+            borderRadius: '14px',
             py: 1.2,
             px: 1.4,
             '&:hover': { backgroundColor: 'rgba(79,70,229,0.08)' },
