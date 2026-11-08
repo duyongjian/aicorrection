@@ -24,6 +24,7 @@ import HistoryEduOutlinedIcon from '@mui/icons-material/HistoryEduOutlined';
 import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
 import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
+import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
 import { BRAND_GRADIENT } from '../theme';
 import { SEGMENT_LABELS, type Segment } from '@aicorrection/shared';
 
@@ -49,10 +50,17 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    title: '强化训练',
+    items: [
+      { to: '/reinforce', label: '强化中心', icon: <AutoAwesomeOutlinedIcon /> },
+    ],
+  },
+  {
     title: '回顾与验收',
     items: [
       { to: '/history', label: '归因历史', icon: <HistoryEduOutlinedIcon /> },
       { to: '/dashboard', label: '验收看板', icon: <DashboardOutlinedIcon /> },
+      { to: '/quality', label: '质量看板', icon: <AssessmentOutlinedIcon /> },
     ],
   },
 ];

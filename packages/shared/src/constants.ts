@@ -58,6 +58,7 @@ export const ID_PREFIX = {
   attribution: 'a_',
   session: 's_',
   review: 'r_',
+  followup: 'fu_',
 } as const;
 
 /** v0.1 业务事件名 */

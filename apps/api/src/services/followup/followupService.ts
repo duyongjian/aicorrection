@@ -6,6 +6,7 @@
 import { getAnalysisProvider } from '../llm';
 import { getLoopSession, incrementFollowupRounds } from '../../models/loopSessionModel';
 import { getAttributionByLoop } from '../../models/attributionModel';
+import { createFollowup } from '../../models/followupModel';
 import { withTimeout } from '../../utils/promise';
 import { TIMEOUT } from '../../config/timeout';
 import type { FollowupResponse } from '@aicorrection/shared';
@@ -59,6 +60,9 @@ export async function followup(
     content = '（追问生成超时，请稍后重试）';
   }
 
+  // 持久化整段对话（用户提问 + AI 回复），供历史回看。
+  createFollowup({ loop_id, anon_user_id, role: 'user', content: message });
+  createFollowup({ loop_id, anon_user_id, role: 'ai', content });
   incrementFollowupRounds(loop_id);
 
   return {

@@ -6,8 +6,6 @@ import AttributionCard from '../components/AttributionCard';
 import RateActions from '../components/RateActions';
 import FollowupPanel from '../components/FollowupPanel';
 import LoopPracticePanel from '../components/LoopPracticePanel';
-import ReinforcePanel from '../components/ReinforcePanel';
-import QualityGatePanel from '../components/QualityGatePanel';
 import AnalyzingState from '../components/AnalyzingState';
 import OcrFeedback from '../components/OcrFeedback';
 import HistoryList from '../components/HistoryList';
@@ -102,29 +100,27 @@ export default function AttributionPage() {
           {imageError ? (
             <Alert severity="warning">原图加载失败（可能已被清理）</Alert>
           ) : (
-            <Box
-              component="a"
-              href={loop.image_url}
-              target="_blank"
-              rel="noreferrer"
-              sx={{ display: 'inline-block' }}
-            >
-              <Box
-                component="img"
-                src={loop.image_url}
-                alt="上传原图"
-                onError={() => setImageError(true)}
-                sx={{
-                  maxWidth: '100%',
-                  maxHeight: 320,
-                  objectFit: 'contain',
-                  borderRadius: '1px',
-                  border: '1px solid',
-                  borderColor: 'divider',
-                  display: 'block',
-                }}
-              />
-            </Box>
+          <Box
+            component="a"
+            href={loop.image_url}
+            target="_blank"
+            rel="noreferrer"
+            sx={{ display: 'inline-block' }}
+          >
+            <img
+              src={loop.image_url}
+              alt="上传原图"
+              onError={() => setImageError(true)}
+              style={{
+                maxWidth: '100%',
+                maxHeight: 320,
+                objectFit: 'contain',
+                borderRadius: 4,
+                border: '1px solid rgba(0,0,0,0.12)',
+                display: 'block',
+              }}
+            />
+          </Box>
           )}
         </Paper>
       )}
@@ -230,21 +226,41 @@ export default function AttributionPage() {
           {rated && (
             <Stack spacing={2} sx={{ mt: 3 }}>
               <Alert severity="success">已记录你的反馈，感谢！</Alert>
-              <Button
-                variant="outlined"
-                onClick={() => setShowFollowup(true)}
-                disabled={showFollowup}
-              >
-                追问一次
-              </Button>
-              {showFollowup && (
+
+              {/* 模块一：追问补充（限 1 次有效，AI 补充讲解） */}
+              {!showFollowup ? (
+                <Paper variant="outlined" sx={{ p: 2 }}>
+                  <Typography variant="subtitle1" sx={{ fontWeight: 700, mb: 1 }}>
+                    追问补充归因
+                  </Typography>
+                  <Button variant="outlined" onClick={() => setShowFollowup(true)}>
+                    追问一次（AI 补充讲解）
+                  </Button>
+                </Paper>
+              ) : (
                 <FollowupPanel onFollowup={followup} />
               )}
+
+              {/* 模块二：巩固练习（同类题 → 复述 → 验证） */}
               {loop && anonUserId && (
                 <LoopPracticePanel loopId={loop.loop_id} anonUserId={anonUserId} />
               )}
-              {anonUserId && <ReinforcePanel anonUserId={anonUserId} />}
-              <QualityGatePanel />
+
+              {/* 账户级复盘：已迁移到侧边栏模块，这里给出快捷入口 */}
+              <Paper variant="outlined" sx={{ p: 2, bgcolor: 'background.default' }}>
+                <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
+                  账户级复盘已收纳到侧边栏
+                </Typography>
+                <Stack direction="row" spacing={1} flexWrap="wrap">
+                  <Button size="small" variant="outlined" onClick={() => navigate('/reinforce')}>
+                    强化中心
+                  </Button>
+                  <Button size="small" variant="outlined" onClick={() => navigate('/quality')}>
+                    质量看板
+                  </Button>
+                </Stack>
+              </Paper>
+
               {completed && (
                 <Alert severity="success">闭环已标记完成。</Alert>
               )}

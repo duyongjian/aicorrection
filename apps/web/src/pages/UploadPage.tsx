@@ -42,6 +42,8 @@ export default function UploadPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  /** 本地照片预览加载失败兜底。 */
+  const [previewError, setPreviewError] = useState(false);
   /** 从草稿恢复时若草稿含图片名（但图片本身不落草稿），提示用户重新选择。 */
   const [draftImageHint, setDraftImageHint] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -54,6 +56,7 @@ export default function UploadPage() {
 
   // 为选中的文件生成预览 URL，并在变化/卸载时释放，避免内存泄漏
   useEffect(() => {
+    setPreviewError(false);
     if (!file) {
       setPreviewUrl(null);
       return;
@@ -175,21 +178,25 @@ export default function UploadPage() {
 
               {file && (
                 <Box>
-                  {previewUrl && (
-                    <Box
-                      component="img"
+                  {previewUrl && !previewError && (
+                    <img
                       src={previewUrl}
                       alt="照片预览"
-                      sx={{
+                      onError={() => setPreviewError(true)}
+                      style={{
                         maxWidth: '100%',
                         maxHeight: 240,
-                        borderRadius: '1px',
-                        border: '1px solid',
-                        borderColor: 'divider',
+                        borderRadius: 4,
+                        border: '1px solid rgba(0,0,0,0.12)',
                         display: 'block',
-                        mb: 1,
+                        marginBottom: 8,
                       }}
                     />
+                  )}
+                  {previewError && (
+                    <Alert severity="warning" sx={{ mb: 1 }}>
+                      照片预览加载失败，请重新选择或拍摄
+                    </Alert>
                   )}
                   <Typography variant="body2" color="text.secondary">
                     {file.name}（{formatFileSize(file.size)}）

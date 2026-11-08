@@ -413,6 +413,54 @@ export const api = {
       .then((r) => r.data.data);
   },
 
+  /** 闭环回看详情：归因 + 追问 + 练习 + 复盘，按 loop 可回顾。 */
+  getLoopDetail(
+    loopId: string,
+    anonUserId: string
+  ): Promise<{
+    loop_id: string;
+    image_url: string | null;
+    attribution: {
+      attribution_id: string;
+      cause: string | null;
+      knowledge_point: string | null;
+      essence: string | null;
+      correct_answer: string | null;
+      derivation: string | null;
+      pitfalls: string | null;
+      rate_action: string | null;
+      created_at: string;
+    } | null;
+    followups: Array<{ role: 'user' | 'ai'; content: string; seq: number }>;
+    practice: Array<{
+      practice_id: string;
+      question_text: string;
+      answer_text: string | null;
+      user_answer: string | null;
+      is_correct: number | null;
+      created_at: string;
+    }>;
+    closure: {
+      followup_rounds: number;
+      has_practice: number | null;
+      restate_len: number | null;
+      restate_is_copy: number | null;
+      restate_text: string | null;
+      verify_result: string | null;
+      verify_prompt: string | null;
+      verify_response: string | null;
+      verify_feedback: string | null;
+    };
+  }> {
+    return http
+      .get(
+        `/attribution/${loopId}/detail?anon_user_id=${encodeURIComponent(
+          anonUserId
+        )}`
+      )
+      .then((r) => r.data.data);
+  },
+
   rate(loopId: string, req: RateRequest): Promise<RateResponse> {
     return http.post(`/attribution/${loopId}/rate`, req).then((r) => r.data.data);
   },

@@ -41,22 +41,20 @@ function HistoryDetail({ item }: { item: HistoryItem }) {
   return (
     <Box>
       {item.image_url && (
-        <Box
-          component="img"
+        <img
           src={item.image_url}
           alt="原图"
           onError={(e) => {
             (e.currentTarget as HTMLImageElement).style.display = 'none';
           }}
-          sx={{
+          style={{
             width: '100%',
             maxHeight: 280,
             objectFit: 'contain',
-            borderRadius: '1px',
-            border: '1px solid',
-            borderColor: 'divider',
+            borderRadius: 4,
+            border: '1px solid rgba(0,0,0,0.12)',
             display: 'block',
-            mb: 2,
+            marginBottom: 8,
           }}
         />
       )}
@@ -164,21 +162,19 @@ export default function HistoryList() {
               sx={{ width: '100%', mr: 1 }}
             >
               {it.image_url ? (
-                <Box
-                  component="img"
+                <img
                   src={it.image_url}
                   alt="原图"
                   onError={(e) => {
                     (e.currentTarget as HTMLImageElement).style.display =
                       'none';
                   }}
-                  sx={{
+                  style={{
                     width: 48,
                     height: 48,
                     objectFit: 'cover',
-                    borderRadius: '1px',
-                    border: '1px solid',
-                    borderColor: 'divider',
+                    borderRadius: 4,
+                    border: '1px solid rgba(0,0,0,0.12)',
                     flexShrink: 0,
                   }}
                 />
@@ -241,6 +237,14 @@ export default function HistoryList() {
           </AccordionSummary>
           <AccordionDetails sx={{ px: 2, pb: 2 }}>
             <HistoryDetail item={it} />
+            <Button
+              size="small"
+              variant="text"
+              sx={{ mt: 1 }}
+              onClick={() => navigate(`/history/${it.loop_id}`)}
+            >
+              查看完整回看（追问 / 练习 / 复盘）
+            </Button>
           </AccordionDetails>
         </Accordion>
       ))}

@@ -6,6 +6,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { generateAttribution } from '../services/attribution/attributionService';
 import { listAttributionsByUser } from '../models/attributionModel';
+import { getLoopDetail } from '../models/loopDetailModel';
+import { HttpError } from '../middleware/errorHandler';
 import { ok } from '../utils/result';
 import { validateBody } from '../middleware/validate';
 
@@ -49,6 +51,27 @@ router.post('/', validateBody(schema), async (req, res, next) => {
       is_internal: req.is_internal ?? false,
     });
     res.json(ok(data));
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * 闭环回看详情（FLW-02 增强）：归因 + 追问 + 练习 + 复盘，按 loop 可回顾。
+ * anon_user_id 作二次校验（与 loop_sessions 比对），不匹配返回 404。
+ */
+router.get('/:loop_id/detail', (req, res, next) => {
+  try {
+    const loop_id = String(req.params.loop_id ?? '').trim();
+    const anon_user_id = String(req.query.anon_user_id ?? '').trim();
+    if (!loop_id || !anon_user_id) {
+      throw new HttpError('INVALID_PARAM', 400, 'loop_id 与 anon_user_id 必填');
+    }
+    const detail = getLoopDetail(loop_id, anon_user_id);
+    if (!detail) {
+      throw new HttpError('NOT_FOUND', 404, '未找到该闭环记录');
+    }
+    res.json(ok(detail));
   } catch (e) {
     next(e);
   }

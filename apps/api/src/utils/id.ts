@@ -37,6 +37,10 @@ export function generateEventId(): string {
   return 'e_' + nano12();
 }
 
+export function generateFollowupId(): string {
+  return ID_PREFIX.followup + nano12();
+}
+
 /** loop_id = l_YYYYMMDD_xxxx（10 位 base36） */
 export function generateLoopId(): string {
   const d = new Date();
