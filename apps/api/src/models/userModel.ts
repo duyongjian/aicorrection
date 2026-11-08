@@ -94,3 +94,52 @@ export function purgeUserData(anon_user_id: string): void {
   })();
 }
 
+/**
+ * 导出该身份的全部业务数据（数据可携性 / 注销前留底）。
+ *
+ * 安全取舍：
+ *  - 只导「业务数据」，不导凭证机密——accounts（登录凭证，含密码哈希）、
+ *    auth_sessions / license_sessions / magic_tokens 这类会话/令牌表整体不导（对备份无意义且属敏感）。
+ *  - 兼容陈旧副本库（缺表）：表不存在时跳过并记 0，不报错。
+ *  - 返回结构固定为 { meta, data }，meta 含导出时间、身份与每张表记录数，便于前端展示与核对。
+ */
+const EXPORT_TABLES: Array<{ table: string; columns?: string }> = [
+  { table: 'users' },
+  { table: 'loop_sessions' },
+  { table: 'mistakes' },
+  { table: 'attributions' },
+  { table: 'practice_items' },
+  { table: 'custom_knowledge_points' },
+  { table: 'review_sessions' },
+  { table: 'review_schedule' },
+  { table: 'mastery_state' },
+  { table: 'analytics_events' },
+  { table: 'subscriptions' },
+  { table: 'payments' },
+];
+
+export function exportUserData(
+  anon_user_id: string
+): { meta: { exported_at: string; anon_user_id: string; counts: Record<string, number> }; data: Record<string, unknown[]> } {
+  const meta = { exported_at: new Date().toISOString(), anon_user_id, counts: {} as Record<string, number> };
+  const data: Record<string, unknown[]> = {};
+  if (!anon_user_id || !getUser(anon_user_id)) {
+    return { meta, data };
+  }
+  const db = getDb();
+  for (const { table, columns } of EXPORT_TABLES) {
+    const exists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table);
+    if (!exists) {
+      data[table] = [];
+      meta.counts[table] = 0;
+      continue;
+    }
+    const rows = db
+      .prepare(`SELECT ${columns ?? '*'} FROM ${table} WHERE anon_user_id = ?`)
+      .all(anon_user_id) as unknown[];
+    data[table] = rows;
+    meta.counts[table] = rows.length;
+  }
+  return { meta, data };
+}
+

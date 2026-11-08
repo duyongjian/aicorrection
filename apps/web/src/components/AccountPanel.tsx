@@ -19,6 +19,7 @@ import {
 import CloseIcon from '@mui/icons-material/Close';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import DeleteForeverOutlinedIcon from '@mui/icons-material/DeleteForeverOutlined';
+import FileDownloadOutlinedIcon from '@mui/icons-material/FileDownloadOutlined';
 import {
   AUTH_TOKEN_STORAGE_KEY,
   LICENSE_TOKEN_STORAGE_KEY,
@@ -105,6 +106,8 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, onDele
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [ackDelete, setAckDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  // 导出数据状态
+  const [exporting, setExporting] = useState(false);
 
   // 魔法链接：若 URL 带 ?token= 自动进入账号→魔法页并回填
   useEffect(() => {
@@ -276,6 +279,29 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, onDele
     } catch (e) {
       setFormError(describeError(e));
       setDeleting(false);
+    }
+  };
+
+  // ---------- 导出我的数据（JSON 留底，注销/清除前可先备份） ----------
+  const handleExport = async () => {
+    setFormError(null);
+    setExporting(true);
+    try {
+      const payload = await api.authExportData();
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const ts = new Date().toISOString().slice(0, 10);
+      a.href = url;
+      a.download = `aicorrection-data-${ts}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setFormError(describeError(e));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -582,6 +608,17 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, onDele
             </Box>
 
             <Divider />
+
+            <Button
+              variant="outlined"
+              color="primary"
+              startIcon={<FileDownloadOutlinedIcon />}
+              onClick={() => void handleExport()}
+              disabled={exporting}
+              sx={{ alignSelf: 'flex-start' }}
+            >
+              {exporting ? '导出中…' : '导出我的数据（JSON 留底）'}
+            </Button>
 
             <Button
               variant="outlined"

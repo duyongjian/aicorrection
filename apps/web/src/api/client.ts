@@ -375,6 +375,17 @@ export const api = {
     return http.post('/auth/delete-account').then((r) => r.data.data);
   },
 
+  /**
+   * 导出当前身份的全部业务数据（JSON）。用于注销/清除前本地留底。
+   * credentials 已剔除密码哈希、会话/令牌表不导出。返回 { meta, data }。
+   */
+  authExportData(): Promise<{
+    meta: { exported_at: string; anon_user_id: string; counts: Record<string, number> };
+    data: Record<string, unknown[]>;
+  }> {
+    return http.get('/auth/export-data').then((r) => r.data.data);
+  },
+
   createAccount(req: CreateAccountRequest): Promise<AccountResponse> {
     return http.post('/account', req).then((r) => r.data.data);
   },

@@ -15,7 +15,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { HttpError } from '../middleware/errorHandler';
 import { createAccount, getAccount } from './accountService';
-import { getUser, mergeUserInto, purgeUserData } from '../models/userModel';
+import { getUser, mergeUserInto, purgeUserData, exportUserData as exportUserDataModel } from '../models/userModel';
 import { getDb } from '../db';
 import {
   createCredential,
@@ -477,6 +477,16 @@ export function logout(token: string | null | undefined): { ok: boolean } {
 export function deleteAccount(anon_user_id: string): { ok: true; purged: boolean } {
   purgeUserData(anon_user_id);
   return { ok: true, purged: true };
+}
+
+/**
+ * 导出账号数据（数据可携性 / 注销前本地留底）。
+ * 仅打包业务数据，剔除密码哈希等凭证机密（细节见 userModel.exportUserData）。
+ */
+export function exportUserData(
+  anon_user_id: string
+): { meta: { exported_at: string; anon_user_id: string; counts: Record<string, number> }; data: Record<string, unknown[]> } {
+  return exportUserDataModel(anon_user_id);
 }
 
 // ----------------- 小工具 -----------------

@@ -22,6 +22,7 @@ import {
   getMe,
   logout,
   deleteAccount,
+  exportUserData,
 } from '../services/authService';
 import { AUTH_COOKIE_NAME, ERROR_CODES } from '@aicorrection/shared';
 
@@ -178,6 +179,32 @@ router.post('/delete-account', async (req, res, next) => {
     }
     const r = deleteAccount(v.anonUserId);
     clearUploadCookie(res);
+    res.json(ok(r));
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * 导出账号数据（数据可携性 / 注销前本地留底）。
+ * 与 delete-account 同理：身份从请求 token 自身解析（auth 或 license token 均可，
+ * 门禁无论是否启用都能校验），不依赖 res.locals.identity。返回 JSON，
+ * 浏览器端据此触发文件下载；credentials 已剔除密码哈希、会话/令牌表不导出（机密）。
+ */
+router.get('/export-data', async (req, res, next) => {
+  try {
+    const token =
+      (req.header('x-auth-token') || '').trim() ||
+      (req.header('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+    const v = verifyIdentityToken(token || null);
+    if (!v.ok) {
+      throw new HttpError(ERROR_CODES.AUTH_REQUIRED, 401, '请先登录或激活后再导出');
+    }
+    const r = exportUserData(v.anonUserId);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="aicorrection-data-${v.anonUserId.slice(0, 8)}-${Date.now()}.json"`
+    );
     res.json(ok(r));
   } catch (e) {
     next(e);
