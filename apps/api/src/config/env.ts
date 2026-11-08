@@ -48,6 +48,10 @@ export const env = {
   LLM_BASE_URL: llmBaseUrl,
   LLM_API_KEY: llmApiKey,
   LLM_MODEL: llmModel,
+  // 视觉 / 识别独立端点（与归因 text 端点分家）。未配置时回落 text 端点（旧行为：
+  // 识别与文本同端点同进程）。实际部署：MiniCPM-V-4.5 跑在独立端口（如 8090），
+  // 与归因强模型 27B（8085）分离，避免同占显存；识别端按需拉起、用完即停。
+  VISION_BASE_URL: process.env.VISION_BASE_URL ?? llmBaseUrl,
   VISION_MODEL: process.env.VISION_MODEL ?? 'llama3.2-vision',
   // 无 Mock 策略（产品硬约束）：真实模型失败必须如实返回失败，绝不用假数据凑数。
   // 默认 false —— 仅在显式打开时，真实模型不可达才降级 Mock（演示用）。

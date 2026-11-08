@@ -18,9 +18,9 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import { env } from '../../config/env';
 
-/** 探活：识别端是否已在提供服务（只探测，不拉起）。 */
+/** 探活：识别端（视觉大模型，独立 VISION_BASE_URL）是否已在提供服务（只探测，不拉起）。 */
 export async function probeRecognition(timeoutMs = 3000): Promise<boolean> {
-  const url = env.LLM_BASE_URL.replace(/\/+$/, '') + '/models';
+  const url = env.VISION_BASE_URL.replace(/\/+$/, '') + '/models';
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {

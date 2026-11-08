@@ -12,6 +12,8 @@ export interface OllamaProviderOptions {
   baseUrl?: string;
   textModel?: string;
   visionModel?: string;
+  /** 视觉 / 识别独立端点（MiniCPM 等跑在独立端口，与 text 端点分家）。 */
+  visionBaseUrl?: string;
   apiKey?: string;
   /** 关闭思考链（thinking）：请求体带 chat_template_kwargs.enable_thinking=false。 */
   disableThinking?: boolean;
@@ -20,6 +22,7 @@ export interface OllamaProviderOptions {
 export class OllamaProvider implements LlmProvider {
   readonly name = 'ollama';
   private client: OpenAI;
+  private visionClient: OpenAI;
   private textModel: string;
   private visionModel: string;
   private disableThinking: boolean;
@@ -35,6 +38,14 @@ export class OllamaProvider implements LlmProvider {
       timeout: 900_000,
       // 后端已有自有重试（ANALYSIS_MAX_RETRIES 仅重试非超时错误），关闭 SDK 默认 2 次重试，
       // 避免对慢失败/瞬时错误的请求叠加放大延迟。
+      maxRetries: 1,
+    });
+    // 视觉请求走独立端点（VISION_BASE_URL），与 text/归因端点分家：
+    // MiniCPM-V 等视觉模型常驻或按需拉起在独立端口，避免与归因 27B 抢显存。
+    this.visionClient = new OpenAI({
+      baseURL: opts?.visionBaseUrl ?? env.VISION_BASE_URL,
+      apiKey: opts?.apiKey ?? env.LLM_API_KEY,
+      timeout: 900_000,
       maxRetries: 1,
     });
     this.textModel = opts?.textModel ?? env.LLM_MODEL;
@@ -101,7 +112,7 @@ export class OllamaProvider implements LlmProvider {
     opts?: LlmOptions
   ): Promise<LlmResult> {
     const t0 = Date.now();
-    const res = await this.client.chat.completions.create({
+    const res = await this.visionClient.chat.completions.create({
       model: opts?.model ?? this.visionModel,
       messages: [
         {
