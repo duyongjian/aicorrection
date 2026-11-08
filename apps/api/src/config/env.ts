@@ -20,6 +20,14 @@ if (fs.existsSync(apiEnv)) {
   dotenv.config();
 }
 
+// 本地覆盖层：apps/api/.env.local（若存在）可覆盖上面任意值，便于本地临时开启闸门 /
+// 切换模型等，且不污染共享的 .env（密钥文件，已被 gitignore）。
+// override:true 保证即便 .env 已设同名变量也能被本地覆盖。该文件同样被 gitignore。
+const apiEnvLocal = path.resolve(__dirname, '../../.env.local');
+if (fs.existsSync(apiEnvLocal)) {
+  dotenv.config({ path: apiEnvLocal, override: true });
+}
+
 function toBool(value: string | undefined, def: boolean): boolean {
   if (value === undefined || value === '') return def;
   return value === 'true' || value === '1';
