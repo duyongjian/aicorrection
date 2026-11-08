@@ -1,27 +1,9 @@
-import { Box, Typography } from '@mui/material';
-import { useLoopStore } from '../store/loopStore';
-import ReinforcePanel from '../components/ReinforcePanel';
+import { Navigate } from 'react-router-dom';
 
 /**
- * 强化中心（账户级总览）：错因分布 / 薄弱知识点 / 间隔复习 / 自定义知识点 /
- * 知识图谱 / 手动错因 / 我的权益。原为归因页"认可后"长列表的一部分，
- * 现独立为侧边栏模块，避免归因页堆砌。
+ * 强化中心已拆分为 5 个侧边栏子模块（诊断/练习/复习/知识/账户），
+ * /reinforce 重定向到首个模块，保证旧书签不 404。
  */
 export default function ReinforcePage() {
-  const anonUserId = useLoopStore((s) => s.anonUserId);
-
-  return (
-    <Box>
-      <Typography variant="h6" sx={{ mb: 2 }}>
-        强化中心
-      </Typography>
-      {anonUserId ? (
-        <ReinforcePanel anonUserId={anonUserId} />
-      ) : (
-        <Typography color="text.secondary">
-          正在读取身份，请稍候…
-        </Typography>
-      )}
-    </Box>
-  );
+  return <Navigate to="/reinforce/diagnosis" replace />;
 }

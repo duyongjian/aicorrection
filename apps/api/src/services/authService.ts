@@ -33,6 +33,7 @@ import {
   getMagicToken,
   consumeMagicToken,
 } from '../models/accountModel';
+import { resolveUserTier } from './licenseService';
 import { ERROR_CODES } from '@aicorrection/shared';
 import type {
   AuthTokenResponse,
@@ -420,13 +421,13 @@ export function verifyAuthToken(token: string | null | undefined): VerifyAuthRes
   if (!Number.isFinite(last) || Date.now() - last > 60_000) {
     touchAuthSession(session.token_hash, new Date().toISOString());
   }
-  // 真实账号默认免费档；订阅升档（subscriptions 表）后续可在此查档位。
+  // 真实账号档位：优先绑定卡密/订阅（resolveUserTier），无则免费档。
   return {
     ok: true,
     anonUserId: session.anon_user_id,
     segment: user.segment as Segment,
     provider: session.provider as AuthProvider,
-    tier: 'free',
+    tier: resolveUserTier(session.anon_user_id),
   };
 }
 

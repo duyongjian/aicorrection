@@ -25,6 +25,11 @@ import DashboardOutlinedIcon from '@mui/icons-material/DashboardOutlined';
 import AccountCircleOutlinedIcon from '@mui/icons-material/AccountCircleOutlined';
 import LoginOutlinedIcon from '@mui/icons-material/LoginOutlined';
 import AssessmentOutlinedIcon from '@mui/icons-material/AssessmentOutlined';
+import InsightsOutlinedIcon from '@mui/icons-material/InsightsOutlined';
+import FitnessCenterOutlinedIcon from '@mui/icons-material/FitnessCenterOutlined';
+import RepeatOutlinedIcon from '@mui/icons-material/RepeatOutlined';
+import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
+import WorkspacePremiumOutlinedIcon from '@mui/icons-material/WorkspacePremiumOutlined';
 import { BRAND_GRADIENT } from '../theme';
 import { SEGMENT_LABELS, type Segment } from '@aicorrection/shared';
 
@@ -52,7 +57,11 @@ const NAV_GROUPS: NavGroup[] = [
   {
     title: '强化训练',
     items: [
-      { to: '/reinforce', label: '强化中心', icon: <AutoAwesomeOutlinedIcon /> },
+      { to: '/reinforce/diagnosis', label: '诊断总览', icon: <InsightsOutlinedIcon /> },
+      { to: '/reinforce/practice', label: '强化练习', icon: <FitnessCenterOutlinedIcon /> },
+      { to: '/reinforce/review', label: '复习记忆', icon: <RepeatOutlinedIcon /> },
+      { to: '/reinforce/knowledge', label: '知识管理', icon: <AccountTreeOutlinedIcon /> },
+      { to: '/reinforce/account', label: '账户权益', icon: <WorkspacePremiumOutlinedIcon /> },
     ],
   },
   {

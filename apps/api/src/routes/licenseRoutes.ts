@@ -10,7 +10,7 @@ import { SEGMENTS, LICENSE_COOKIE_NAME, LICENSE_TIERS } from '@aicorrection/shar
 import { env } from '../config/env';
 import { ok } from '../utils/result';
 import { validateBody } from '../middleware/validate';
-import { extractLicenseToken } from '../middleware/requireLicense';
+import { extractLicenseToken, extractIdentityToken, verifyIdentityToken } from '../middleware/requireLicense';
 import {
   redeemLicense,
   getLicenseStatus,
@@ -55,9 +55,11 @@ router.get('/status', (req, res) => {
   res.json(ok(status));
 });
 
-/** 当前档位与权益快照（前端显隐功能入口用）。需身份凭证。 */
+/** 当前档位与权益快照（前端显隐功能入口用）。卡密或真实账号登录均解析。 */
 router.get('/plan', (req, res) => {
-  res.json(ok(getLicensePlan(extractLicenseToken(req))));
+  const id = verifyIdentityToken(extractIdentityToken(req));
+  const anonUserId = id.ok ? id.anonUserId : undefined;
+  res.json(ok(getLicensePlan(extractLicenseToken(req), anonUserId)));
 });
 
 /** 续费：延长有效期（可选升档）。需身份凭证。 */

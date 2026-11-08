@@ -412,12 +412,44 @@ export function listLicenses(batchId?: string): LicenseListViewItem[] {
 // ===================== 商业化：权益层 / 订阅 / 续费 =====================
 
 /**
- * 当前档位与权益快照查询（前端显隐功能入口、后端接口级闸门共用）。
- * 优先从已兑换卡密解析（含发行时冻结的权益快照），无卡密（仅真实账号登录）默认免费档。
+ * 查账号绑定的有效档位来源：已兑换卡密（含 anon_user_id）优先，其次进行中的订阅。
+ * 返回档位与到期时间；无绑定则返回 null（走免费档）。
  */
-export function getLicensePlan(token: string | null | undefined): LicensePlanResponse {
-  if (token) {
-    const v = verifyLicenseToken(token);
+export function getBoundLicenseForUser(
+  anonUserId: string
+): { tier: LicenseTier; expiresAt: string | null } | null {
+  const db = getDb();
+  const key = db
+    .prepare(
+      `SELECT tier, expires_at FROM license_keys
+       WHERE anon_user_id = ? AND status = 'redeemed' ORDER BY redeemed_at DESC LIMIT 1`
+    )
+    .get(anonUserId) as { tier: string; expires_at: string | null } | undefined;
+  if (key) {
+    const expired = key.expires_at != null && new Date(key.expires_at).getTime() < Date.now();
+    if (!expired) return { tier: (key.tier as LicenseTier) || 'free', expiresAt: key.expires_at };
+  }
+  const sub = getActiveSubscription(anonUserId);
+  if (sub) return { tier: (sub.tier as LicenseTier) || 'free', expiresAt: sub.current_period_end };
+  return null;
+}
+
+/** 账号当前档位（无绑定档位则 free）。auth 校验与计划查询共用，使密码登录也能认绑定档位。 */
+export function resolveUserTier(anonUserId: string): LicenseTier {
+  return getBoundLicenseForUser(anonUserId)?.tier ?? 'free';
+}
+
+/**
+ * 当前档位与权益快照查询（前端显隐功能入口、后端接口级闸门共用）。
+ * 优先从已兑换卡密解析；其次按 anon_user_id 解析绑定档位（卡密/订阅）；
+ * 均无则默认免费档。这样真实账号（密码/短信/微信/魔法链接登录）也能拥有付费档位。
+ */
+export function getLicensePlan(
+  licenseToken?: string | null,
+  anonUserId?: string | null
+): LicensePlanResponse {
+  if (licenseToken) {
+    const v = verifyLicenseToken(licenseToken);
     if (v.ok) {
       const isExpired = v.expiresAt ? new Date(v.expiresAt).getTime() < Date.now() : false;
       return {
@@ -430,7 +462,22 @@ export function getLicensePlan(token: string | null | undefined): LicensePlanRes
       };
     }
   }
-  // 无有效凭证：默认免费档（可走升档/订阅流程）
+  // 真实账号：按绑定档位解析（卡密/订阅），无则免费档
+  if (anonUserId) {
+    const bound = getBoundLicenseForUser(anonUserId);
+    if (bound) {
+      const isExpired = bound.expiresAt ? new Date(bound.expiresAt).getTime() < Date.now() : false;
+      return {
+        tier: bound.tier,
+        tier_label: LICENSE_TIER_LABELS[bound.tier] ?? bound.tier,
+        entitlements: getEntitlements(bound.tier),
+        expires_at: bound.expiresAt,
+        is_expired: isExpired,
+        can_renew: !isExpired && bound.tier !== 'max',
+      };
+    }
+  }
+  // 无有效凭证/绑定：默认免费档（可走升档/订阅流程）
   return {
     tier: 'free',
     tier_label: LICENSE_TIER_LABELS.free,
