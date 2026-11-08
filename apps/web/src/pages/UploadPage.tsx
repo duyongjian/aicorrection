@@ -13,7 +13,6 @@ import {
   TextField,
   Typography,
 } from '@mui/material';
-import { SEGMENTS, SEGMENT_LABELS, type Segment } from '@aicorrection/shared';
 import { useLoop } from '../hooks/useLoop';
 import { useDraft, type Draft } from '../hooks/useDraft';
 import DraftRestore from '../components/DraftRestore';
@@ -34,8 +33,10 @@ export default function UploadPage() {
   const { upload, segment } = useLoop();
   const { drafts, loadDrafts, saveDraft, deleteDraft } = useDraft();
 
-  const [seg, setSeg] = useState<Segment>(segment ?? 'kaoyan');
-  const [srcType, setSrcType] = useState<'photo' | 'text' | 'paste'>('text');
+  // 学段不再由用户逐题选择：沿用账号学段（持久化在 localStorage），无记录时兜底为 kaoyan。
+  // 该字段后端仍要求，但对归因/分析 prompt 无影响，故不再作为上传页摩擦项。
+  const seg = segment ?? 'kaoyan';
+  const [srcType, setSrcType] = useState<'photo' | 'text'>('text');
   const [text, setText] = useState('');
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -117,8 +118,8 @@ export default function UploadPage() {
   };
 
   const restore = (d: Draft): void => {
-    setSeg(d.segment);
-    setSrcType(d.src_type);
+    // 历史草稿可能存了 paste 类型（早期版本），合并后统一归为 text
+    setSrcType(d.src_type === 'paste' ? 'text' : d.src_type);
     setText(d.raw_text ?? '');
     // 草稿不存图片（既有设计），保持置空；若有图片名则提示需重新拍摄/选择
     setFile(null);
@@ -137,33 +138,16 @@ export default function UploadPage() {
       <Paper variant="outlined" sx={{ p: 2 }}>
         <Stack spacing={2}>
           <FormControl fullWidth size="small">
-            <InputLabel id="seg-label">学段</InputLabel>
-            <Select
-              labelId="seg-label"
-              label="学段"
-              value={seg}
-              onChange={(e) => setSeg(e.target.value as Segment)}
-            >
-              {SEGMENTS.map((s) => (
-                <MenuItem key={s} value={s}>
-                  {SEGMENT_LABELS[s]}
-                </MenuItem>
-              ))}
-            </Select>
-          </FormControl>
-
-          <FormControl fullWidth size="small">
             <InputLabel id="src-label">提交方式</InputLabel>
             <Select
               labelId="src-label"
               label="提交方式"
               value={srcType}
               onChange={(e) =>
-                setSrcType(e.target.value as 'photo' | 'text' | 'paste')
+                setSrcType(e.target.value as 'photo' | 'text')
               }
             >
-              <MenuItem value="text">文本输入</MenuItem>
-              <MenuItem value="paste">粘贴</MenuItem>
+              <MenuItem value="text">文本输入 / 粘贴</MenuItem>
               <MenuItem value="photo">拍照 / 图片</MenuItem>
             </Select>
           </FormControl>
@@ -238,7 +222,8 @@ export default function UploadPage() {
             <TextField
               multiline
               minRows={4}
-              label={srcType === 'paste' ? '粘贴题目' : '输入题目'}
+              label="输入或粘贴题目"
+              placeholder="可直接键入，也可 Ctrl/Cmd+V 粘贴题目文字"
               value={text}
               onChange={(e) => setText(e.target.value)}
             />
