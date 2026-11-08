@@ -52,11 +52,19 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
     providers?: string[];
   } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
+  /** 已激活态下强制显示登录/激活界面（而非设置视图），用于「切换身份 / 登录」入口。 */
+  const [loginMode, setLoginMode] = useState(false);
+  /** 门禁是否开启（决定退出后是否必须重新登录）。 */
+  const [gateEnabled, setGateEnabled] = useState(false);
 
   const checkStatus = useCallback(async () => {
     setPhase('checking');
     setCheckError(null);
     try {
+      // 先取门禁开关（即便下面走账号分支提前 return，也需知道 gate 状态，
+      // 以便「退出登录」时决定回到激活页还是保持可用）。
+      const l = await api.getLicenseStatus();
+      setGateEnabled(l.gate_enabled);
       // 1. 真实账号优先
       const authTok = readAuthToken();
       if (authTok) {
@@ -78,8 +86,7 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
           /* 忽略，回落卡密校验 */
         }
       }
-      // 2. 卡密 / 门禁状态
-      const l = await api.getLicenseStatus();
+      // 2. 卡密 / 门禁状态（复用上面已查的 l）
       if (l.active || !l.gate_enabled) {
         if (l.active && l.anon_user_id) {
           const seg = (l.segment as Segment) ?? 'gaozhong';
@@ -117,9 +124,15 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
     if (phase === 'activate') setAccountOpen(true);
   }, [phase]);
 
-  const openAccount = useCallback(() => setAccountOpen(true), []);
+  const openAccount = useCallback(() => {
+    setLoginMode(!identity?.identifier);
+    setAccountOpen(true);
+  }, [identity?.identifier]);
   const closeAccount = useCallback(() => {
-    if (phase === 'active') setAccountOpen(false);
+    if (phase === 'active') {
+      setLoginMode(false);
+      setAccountOpen(false);
+    }
   }, [phase]);
 
   const handleLogout = useCallback(() => {
@@ -130,9 +143,18 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
     } catch {
       /* ignore */
     }
-    setAccountOpen(false);
-    void checkStatus();
-  }, [checkStatus]);
+    // 主动退出 / 注销：清掉身份后回到「需要登录」的界面，便于重新登录或切换账号。
+    // 不再调用 checkStatus()：门禁关闭（dev 默认）时 checkStatus 会无条件判定 active，
+    // 导致面板关闭后界面毫无变化（即「点了没反应」）。
+    const wasAccount = !!identity?.identifier;
+    setIdentity(null);
+    setLoginMode(true); // 重开为登录界面（默认账号 tab），便于直接登录 / 切换
+    if (wasAccount && gateEnabled) {
+      // 门禁开启（生产）：账号已退出，必须重新登录才能使用 → 回到阻塞激活态。
+      setPhase('activate');
+    }
+    setAccountOpen(true);
+  }, [identity?.identifier, gateEnabled]);
 
   if (phase === 'checking') {
     return (
@@ -220,6 +242,8 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
       <AccountPanel
         open={accountOpen}
         blocking={phase === 'activate'}
+        forceLogin={loginMode}
+        defaultToAccount={loginMode}
         onClose={closeAccount}
         onLogout={handleLogout}
         onDeleteAccount={handleLogout}

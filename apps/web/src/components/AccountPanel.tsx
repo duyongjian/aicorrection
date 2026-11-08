@@ -41,6 +41,10 @@ interface AccountPanelProps {
   open: boolean;
   /** 未激活时阻塞式打开（禁用关闭 / ESC）。 */
   blocking: boolean;
+  /** 已激活态下强制显示登录 / 激活界面（而非设置视图），用于「切换身份 / 登录」入口。 */
+  forceLogin?: boolean;
+  /** 以登录界面打开时默认选中「账号登录 / 注册」而非卡密激活。 */
+  defaultToAccount?: boolean;
   onClose: () => void;
   /** 退出登录 / 切换身份：清本地凭证并回到登录态（服务端会话由本组件先作废）。 */
   onLogout: () => void;
@@ -83,7 +87,7 @@ function readLocalAnonUserId(): string | null {
   }
 }
 
-export default function AccountPanel({ open, blocking, onClose, onLogout, onDeleteAccount, identity }: AccountPanelProps) {
+export default function AccountPanel({ open, blocking, forceLogin, defaultToAccount, onClose, onLogout, onDeleteAccount, identity }: AccountPanelProps) {
   // 卡密表单
   const [code, setCode] = useState('');
   // 账号表单
@@ -109,16 +113,22 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, onDele
   // 导出数据状态
   const [exporting, setExporting] = useState(false);
 
-  // 魔法链接：若 URL 带 ?token= 自动进入账号→魔法页并回填
+  // 每次打开面板：重置到合适的初始 tab。
+  // - URL 带 ?token=：魔法链接回填（优先）；否则按 defaultToAccount 决定账号 / 卡密。
   useEffect(() => {
     if (!open) return;
+    setFormError(null);
+    setDevHint(null);
     const t = new URLSearchParams(window.location.search).get('token');
     if (t) {
       setMagicToken(t);
       setTab('account');
       setAcctTab('magic');
+    } else {
+      setTab(defaultToAccount ? 'account' : 'card');
+      setAcctTab('pwd');
     }
-  }, [open]);
+  }, [open, defaultToAccount]);
 
   // ---------- 卡密激活 ----------
   const handleActivate = async () => {
@@ -343,7 +353,7 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, onDele
       </Box>
 
       <Box sx={{ px: 3, py: 2.5, maxHeight: '70vh', overflowY: 'auto' }}>
-        {blocking ? (
+        {(blocking || !!forceLogin) ? (
           <Stack spacing={2.5}>
             <Tabs
               value={tab}
