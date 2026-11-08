@@ -29,6 +29,13 @@ export class OllamaProvider implements LlmProvider {
     this.client = new OpenAI({
       baseURL: opts?.baseUrl ?? env.LLM_BASE_URL,
       apiKey: opts?.apiKey ?? env.LLM_API_KEY,
+      // 显式超时：必须 ≥ 后端 ATTRIBUTION_MS(900s)，否则 SDK 默认 600s 会在后端闸门之前
+      // 自行 abort，把"慢模型"误判成超时 → 后端返回 analyzing 降级态（用户看到"超时/分析失败"）。
+      // 由后端 withTimeout 做唯一决策；此处仅兜底，绝不早于后端截断。
+      timeout: 900_000,
+      // 后端已有自有重试（ANALYSIS_MAX_RETRIES 仅重试非超时错误），关闭 SDK 默认 2 次重试，
+      // 避免对慢失败/瞬时错误的请求叠加放大延迟。
+      maxRetries: 1,
     });
     this.textModel = opts?.textModel ?? env.LLM_MODEL;
     this.visionModel = opts?.visionModel ?? env.VISION_MODEL;
