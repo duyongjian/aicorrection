@@ -183,6 +183,8 @@ export const ERROR_CODES = {
   LICENSE_ALREADY_USED: 4003,
   LICENSE_REVOKED: 4004,
   LICENSE_EXPIRED: 4005,
+  /** 凭证有效但缺少某付费权益（按档位功能限制）；HTTP 403。 */
+  ENTITLEMENT_REQUIRED: 4006,
   // 真实账号体系（v0.2）：5xxx 段，均为可展示给用户的明确原因
   AUTH_REQUIRED: 5001,
   AUTH_INVALID: 5002,

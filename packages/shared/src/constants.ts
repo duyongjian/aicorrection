@@ -164,6 +164,17 @@ export const ENTITLEMENTS = [
 ] as const;
 export type Entitlement = (typeof ENTITLEMENTS)[number];
 
+/** 权益点中文标签（前端展示，避免散落中文串）。 */
+export const ENTITLEMENT_LABELS: Record<Entitlement, string> = {
+  core_loop: '基础闭环',
+  unlimited_loops: '无限闭环',
+  spaced_review: '间隔复习',
+  custom_kp: '自定义知识点',
+  knowledge_graph: '知识图谱',
+  advanced_models: '高级解析模型',
+  priority_support: '优先支持',
+};
+
 /** 各档位权益集合（冻结映射，与发卡时写入 license_keys.entitlements_json 一致） */
 export const TIER_ENTITLEMENTS: Record<LicenseTier, Entitlement[]> = {
   free: ['core_loop'],

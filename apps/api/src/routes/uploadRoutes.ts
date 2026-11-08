@@ -6,10 +6,13 @@ import { Router } from 'express';
 import multer from 'multer';
 import type { Request, Response, NextFunction } from 'express';
 import { z } from 'zod';
-import { SEGMENTS, SRC_TYPES } from '@aicorrection/shared';
+import { SEGMENTS, SRC_TYPES, FREE_DAILY_LOOP_QUOTA, ERROR_CODES } from '@aicorrection/shared';
 import { handleUpload } from '../services/uploadService';
 import { ok } from '../utils/result';
 import { boolFromForm } from '../middleware/validate';
+import { HttpError } from '../middleware/errorHandler';
+import { isLicenseGateEnabled } from '../services/licenseService';
+import { countLoopsToday } from '../models/loopSessionModel';
 
 const router = Router();
 const upload = multer({
@@ -48,6 +51,33 @@ const maybeUpload = (req: Request, res: Response, next: NextFunction): void => {
 router.post('/', maybeUpload, async (req, res, next) => {
   try {
     const parsed = fieldSchema.parse(req.body);
+
+    // 每日闭环配额（unlimited_loops 权益的反面）：门禁开启且用户无 unlimited_loops
+    // 时，免费版每日限 FREE_DAILY_LOOP_QUOTA 次；达到上限即拦截，引导升级。
+    // 门禁关闭（开发态）一律放行，保持全功能可用。
+    // 依赖 requireLicense 在 res.locals.identity 写入的 entitlements。
+    if (isLicenseGateEnabled()) {
+      const identity = res.locals.identity as
+        | { entitlements?: string[] }
+        | undefined;
+      const hasUnlimited = Array.isArray(identity?.entitlements)
+        ? identity!.entitlements!.includes('unlimited_loops')
+        : false;
+      if (!hasUnlimited) {
+        const used = countLoopsToday(parsed.anon_user_id);
+        if (used >= FREE_DAILY_LOOP_QUOTA) {
+          next(
+            new HttpError(
+              ERROR_CODES.ENTITLEMENT_REQUIRED,
+              403,
+              `免费版每日最多 ${FREE_DAILY_LOOP_QUOTA} 次闭环，今日已用完。升级专业版 / 旗舰版解锁无限次。`
+            )
+          );
+          return;
+        }
+      }
+    }
+
     const imageBuffer = req.file?.buffer;
     const imageExt = req.file ? extFromMime(req.file.mimetype) : undefined;
     const result = await handleUpload({

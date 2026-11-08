@@ -19,6 +19,7 @@ import type { Segment } from '@aicorrection/shared';
 import { api, describeError } from '../api/client';
 import AppShell from './AppShell';
 import AccountPanel from './AccountPanel';
+import { LicensePlanProvider } from '../context/LicensePlanContext';
 
 const LICENSE_LOST_EVENT = 'aicorrection:license-lost';
 const AUTH_LOST_EVENT = 'aicorrection:auth-lost';
@@ -216,29 +217,31 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
   // active 或 activate 都渲染应用外壳；未激活时叠加阻塞式面板
   return (
     <>
-      <AppShell onOpenAccount={openAccount} identity={identity}>
-        {phase === 'active' ? (
-          children
-        ) : (
-          <Box
-            sx={{
-              display: 'flex',
-              flexDirection: 'column',
-              alignItems: 'center',
-              justifyContent: 'center',
-              minHeight: '60vh',
-              textAlign: 'center',
-              color: 'text.secondary',
-            }}
-          >
-            <AccountCircleOutlinedIcon sx={{ fontSize: 56, color: 'primary.light', mb: 1.5 }} />
-            <Typography variant="h6" sx={{ color: 'text.primary', mb: 0.5 }}>
-              登录后即可开始错题归因
-            </Typography>
-            <Typography variant="body2">点击左下角「登录 / 注册」激活你的账号</Typography>
-          </Box>
-        )}
-      </AppShell>
+      <LicensePlanProvider gateEnabled={gateEnabled}>
+        <AppShell onOpenAccount={openAccount} identity={identity}>
+          {phase === 'active' ? (
+            children
+          ) : (
+            <Box
+              sx={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                minHeight: '60vh',
+                textAlign: 'center',
+                color: 'text.secondary',
+              }}
+            >
+              <AccountCircleOutlinedIcon sx={{ fontSize: 56, color: 'primary.light', mb: 1.5 }} />
+              <Typography variant="h6" sx={{ color: 'text.primary', mb: 0.5 }}>
+                登录后即可开始错题归因
+              </Typography>
+              <Typography variant="body2">点击左下角「登录 / 注册」激活你的账号</Typography>
+            </Box>
+          )}
+        </AppShell>
+      </LicensePlanProvider>
       <AccountPanel
         open={accountOpen}
         blocking={phase === 'activate'}

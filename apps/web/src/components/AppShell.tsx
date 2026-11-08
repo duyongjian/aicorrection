@@ -31,7 +31,9 @@ import RepeatOutlinedIcon from '@mui/icons-material/RepeatOutlined';
 import AccountTreeOutlinedIcon from '@mui/icons-material/AccountTreeOutlined';
 import WorkspacePremiumOutlinedIcon from '@mui/icons-material/WorkspacePremiumOutlined';
 import { BRAND_GRADIENT } from '../theme';
-import { SEGMENT_LABELS, type Segment } from '@aicorrection/shared';
+import { SEGMENT_LABELS, ENTITLEMENT_LABELS, type Segment, type Entitlement } from '@aicorrection/shared';
+import { useLicensePlan } from '../context/LicensePlanContext';
+import LockOutlinedIcon from '@mui/icons-material/LockOutlined';
 
 const DRAWER_WIDTH = 264;
 
@@ -39,6 +41,8 @@ interface NavItem {
   to: string;
   label: string;
   icon: ReactNode;
+  /** 所需的付费权益；缺权益时侧边栏显示锁定徽标（与后端 requireEntitlement 对称）。 */
+  requiredEntitlement?: Entitlement;
 }
 
 interface NavGroup {
@@ -59,8 +63,8 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { to: '/reinforce/diagnosis', label: '诊断总览', icon: <InsightsOutlinedIcon /> },
       { to: '/reinforce/practice', label: '强化练习', icon: <FitnessCenterOutlinedIcon /> },
-      { to: '/reinforce/review', label: '复习记忆', icon: <RepeatOutlinedIcon /> },
-      { to: '/reinforce/knowledge', label: '知识管理', icon: <AccountTreeOutlinedIcon /> },
+      { to: '/reinforce/review', label: '复习记忆', icon: <RepeatOutlinedIcon />, requiredEntitlement: 'spaced_review' },
+      { to: '/reinforce/knowledge', label: '知识管理', icon: <AccountTreeOutlinedIcon />, requiredEntitlement: 'custom_kp' },
       { to: '/reinforce/account', label: '账户权益', icon: <WorkspacePremiumOutlinedIcon /> },
     ],
   },
@@ -101,6 +105,7 @@ export default function AppShell({ children, onOpenAccount, identity }: AppShell
   const [mobileOpen, setMobileOpen] = useState(false);
   const location = useLocation();
   const pageTitle = titleForPath(location.pathname);
+  const { has, loading: planLoading } = useLicensePlan();
 
   const drawerContent = (
     <Box sx={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
@@ -156,21 +161,38 @@ export default function AppShell({ children, onOpenAccount, identity }: AppShell
               {group.title}
             </Typography>
             <List disablePadding>
-              {group.items.map((item) => (
-                <ListItemButton
-                  key={item.to}
-                  component={NavLink}
-                  to={item.to}
-                  onClick={() => setMobileOpen(false)}
-                  sx={{ mx: 1, my: 0.3 }}
-                >
-                  <ListItemIcon sx={{ minWidth: 38 }}>{item.icon}</ListItemIcon>
-                  <ListItemText
-                    primary={item.label}
-                    primaryTypographyProps={{ fontWeight: 600, fontSize: 14.5 }}
-                  />
-                </ListItemButton>
-              ))}
+              {group.items.map((item) => {
+                const reqEnt = item.requiredEntitlement;
+                const locked = !!reqEnt && !planLoading && !has(reqEnt);
+                return (
+                  <ListItemButton
+                    key={item.to}
+                    component={NavLink}
+                    to={item.to}
+                    onClick={() => setMobileOpen(false)}
+                    sx={{ mx: 1, my: 0.3 }}
+                  >
+                    <ListItemIcon sx={{ minWidth: 38 }}>
+                      {locked ? (
+                        <LockOutlinedIcon sx={{ color: 'text.disabled' }} />
+                      ) : (
+                        item.icon
+                      )}
+                    </ListItemIcon>
+                    <ListItemText
+                      primary={item.label}
+                      primaryTypographyProps={{ fontWeight: 600, fontSize: 14.5 }}
+                    />
+                    {locked && reqEnt && (
+                      <Tooltip
+                        title={`需「${ENTITLEMENT_LABELS[reqEnt]}」权益（升级专业版 / 旗舰版解锁）`}
+                      >
+                        <LockOutlinedIcon sx={{ fontSize: 16, color: 'text.disabled', ml: 0.5 }} />
+                      </Tooltip>
+                    )}
+                  </ListItemButton>
+                );
+              })}
             </List>
           </Box>
         ))}

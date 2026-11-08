@@ -13,7 +13,12 @@ import {
   Typography,
 } from '@mui/material';
 import { api } from '../../api/client';
-import { LICENSE_TIER_LABELS, type Entitlement, type LicensePlanResponse } from '@aicorrection/shared';
+import {
+  LICENSE_TIER_LABELS,
+  ENTITLEMENT_LABELS,
+  type Entitlement,
+  type LicensePlanResponse,
+} from '@aicorrection/shared';
 
 interface Props {
   anonUserId: string;
@@ -84,7 +89,7 @@ export default function AccountPanel({ anonUserId }: Props) {
           </Box>
           <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, mt: 1 }}>
             {plan.entitlements.map((e: Entitlement) => (
-              <Chip key={e} size="small" variant="outlined" label={e} />
+              <Chip key={e} size="small" variant="outlined" label={ENTITLEMENT_LABELS[e] ?? e} />
             ))}
           </Box>
           {renewMsg && <Alert severity="success" sx={{ mt: 1 }}>{renewMsg}</Alert>}

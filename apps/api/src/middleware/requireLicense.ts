@@ -15,10 +15,12 @@ import {
   LICENSE_COOKIE_NAME,
   AUTH_TOKEN_HEADER,
   AUTH_COOKIE_NAME,
+  LICENSE_TIER_LABELS,
+  ENTITLEMENT_LABELS,
 } from '@aicorrection/shared';
 import { isLicenseGateEnabled, verifyLicenseToken, getEntitlements } from '../services/licenseService';
 import { verifyAuthToken } from '../services/authService';
-import type { LicenseTier } from '@aicorrection/shared';
+import type { LicenseTier, Entitlement } from '@aicorrection/shared';
 
 /** 手工解析 Cookie 头（避免为这一处引入 cookie-parser 依赖）。 */
 function readCookie(req: Request, name: string): string | null {
@@ -175,3 +177,52 @@ export const requireLicense: RequestHandler = (req, res, next) => {
   }
   next();
 };
+
+/**
+ * 按权益点的接口级闸门（per-entitlement guard）。
+ *
+ * 与 requireLicense（只校验"凭证是否有效"）互补：凭证有效只是入场券，
+ * 具体功能是否可用由档位权益决定。典型用法是挂在 requireLicense 之后、
+ * 目标路由之前：
+ *
+ *   router.get('/graph', requireEntitlement('knowledge_graph'), handler)
+ *
+ * 行为：
+ *  - 门禁关闭（LICENSE_GATE_ENABLED≠true，即默认开发态）：一律放行，
+ *    保证开发/单测流程零变化、全功能可用（与免费/付费无关）。
+ *  - 门禁开启但身份缺失：理论上不会被命中（requireLicense 已先行拦截），
+ *    这里作为兜底仍回 401，避免误放匿名请求。
+ *  - 身份有效但缺权益：回 403 ENTITLEMENT_REQUIRED，并明确告知缺哪个权益、
+ *    当前档位，引导升级。
+ *
+ * 注：依赖 requireLicense 在 res.locals.identity 写入的 entitlements
+ * （由 getEntitlements(tier) 派生），故本中间件必须晚于 requireLicense 注册。
+ */
+export function requireEntitlement(ent: Entitlement): RequestHandler {
+  return (req, res, next) => {
+    if (!isLicenseGateEnabled()) {
+      next();
+      return;
+    }
+    const identity = res.locals.identity as
+      | { entitlements?: Entitlement[]; tier?: LicenseTier }
+      | undefined;
+    if (!identity || !Array.isArray(identity.entitlements)) {
+      next(new HttpError(ERROR_CODES.LICENSE_REQUIRED, 401, '请先使用卡密激活或登录账号后再使用'));
+      return;
+    }
+    if (!identity.entitlements.includes(ent)) {
+      const label = ENTITLEMENT_LABELS[ent] ?? ent;
+      const tierLabel = LICENSE_TIER_LABELS[(identity.tier as LicenseTier) ?? 'free'] ?? identity.tier ?? '当前档位';
+      next(
+        new HttpError(
+          ERROR_CODES.ENTITLEMENT_REQUIRED,
+          403,
+          `「${label}」为付费专属功能，当前${tierLabel}无权限。升级专业版 / 旗舰版后解锁。`
+        )
+      );
+      return;
+    }
+    next();
+  };
+}

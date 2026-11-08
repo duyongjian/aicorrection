@@ -35,6 +35,7 @@ import {
 } from '../services/knowledgeService';
 import { ERROR_CODES } from '@aicorrection/shared';
 import { HttpError } from '../middleware/errorHandler';
+import { requireEntitlement } from '../middleware/requireLicense';
 
 const router = Router();
 
@@ -194,8 +195,8 @@ router.post(
 
 // ===================== P2 间隔复习（R15/R16 复习列表 + R12 变式题） =====================
 
-/** R16 复习列表：该用户全部复习计划（含 is_due 标记）。 */
-router.get('/review/due', (req, res, next) => {
+/** R16 复习列表：该用户全部复习计划（含 is_due 标记）。需要 spaced_review 权益。 */
+router.get('/review/due', requireEntitlement('spaced_review'), (req, res, next) => {
   try {
     const anon_user_id = requireAnonUserId(req);
     res.json(ok(getDueReviewsList(anon_user_id)));
@@ -207,6 +208,7 @@ router.get('/review/due', (req, res, next) => {
 /** R15 发起一次复测：返回变式题（is_variant=1）。 */
 router.post(
   '/review/start',
+  requireEntitlement('spaced_review'),
   validateBody(
     z.object({
       anon_user_id: z.string().min(1),
@@ -233,6 +235,7 @@ router.post(
 /** R15 完成复测：写回流结果并刷新复习间隔。 */
 router.post(
   '/review/complete',
+  requireEntitlement('spaced_review'),
   validateBody(
     z.object({
       review_id: z.string().min(1),
@@ -251,9 +254,10 @@ router.post(
 
 // ===================== P2 自定义知识点 / 手动错因 / 知识图谱（R17/R20/R18） =====================
 
-/** R17 自定义知识点：新增（kp_id 自动以 ckp_ 前缀生成）。 */
+/** R17 自定义知识点：新增（kp_id 自动以 ckp_ 前缀生成）。需要 custom_kp 权益。 */
 router.post(
   '/custom-kp',
+  requireEntitlement('custom_kp'),
   validateBody(
     z.object({
       anon_user_id: z.string().min(1),
@@ -271,8 +275,8 @@ router.post(
   }
 );
 
-/** R17 自定义知识点：列出该用户的全部自定义知识点。 */
-router.get('/custom-kp', (req, res, next) => {
+/** R17 自定义知识点：列出该用户的全部自定义知识点。需要 custom_kp 权益。 */
+router.get('/custom-kp', requireEntitlement('custom_kp'), (req, res, next) => {
   try {
     const anon_user_id = requireAnonUserId(req);
     res.json(ok(listCustomKps(anon_user_id)));
@@ -308,8 +312,8 @@ router.patch(
   }
 );
 
-/** R18 知识图谱：导出该用户的知识点共现图（节点 + 边）。 */
-router.get('/graph', (req, res, next) => {
+/** R18 知识图谱：导出该用户的知识点共现图（节点 + 边）。需要 knowledge_graph 权益。 */
+router.get('/graph', requireEntitlement('knowledge_graph'), (req, res, next) => {
   try {
     const anon_user_id = requireAnonUserId(req);
     res.json(ok(getKnowledgeGraph(anon_user_id)));

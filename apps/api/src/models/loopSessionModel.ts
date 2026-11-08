@@ -48,3 +48,17 @@ export function completeLoopSession(loop_id: string): void {
     )
     .run(new Date(now).toISOString(), durationMs, loop_id);
 }
+
+/**
+ * 统计某用户「今天」已创建的闭环数（按 UTC 日期，与 created_at 写入口径一致）。
+ * 用于 unlimited_loops 权益的每日配额：免费版每日限 FREE_DAILY_LOOP_QUOTA 次。
+ */
+export function countLoopsToday(anonUserId: string): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS cnt FROM loop_sessions
+       WHERE anon_user_id = ? AND DATE(created_at) = DATE('now')`
+    )
+    .get(anonUserId) as { cnt: number } | undefined;
+  return row?.cnt ?? 0;
+}
