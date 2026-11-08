@@ -15,7 +15,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { HttpError } from '../middleware/errorHandler';
 import { createAccount, getAccount } from './accountService';
-import { getUser } from '../models/userModel';
+import { getUser, mergeUserInto } from '../models/userModel';
 import { getDb } from '../db';
 import {
   createCredential,
@@ -239,6 +239,10 @@ export function loginWithPassword(req: AuthLoginRequest): AuthTokenResponse {
     throw new HttpError(ERROR_CODES.AUTH_INVALID, 401, '邮箱或密码错误');
   }
   const acc = getAccount(cred.anon_user_id);
+  // 登录时合并浏览器本地匿名身份（若传入且与账号身份不同），使登录前的错题/归因等记录归属账号。
+  if (req.link_anon_user_id) {
+    mergeUserInto(req.link_anon_user_id, cred.anon_user_id);
+  }
   const token = issueSession(cred.anon_user_id, 'password');
   return {
     auth_token: token,
@@ -442,6 +446,7 @@ export function getAuthStatus(token: string | null | undefined): AuthStatusRespo
     segment: (user?.segment as Segment) ?? null,
     provider: v.provider,
     providers: creds.map((c) => c.provider),
+    identifier: creds[0]?.identifier ?? null,
   };
 }
 
@@ -454,6 +459,7 @@ export function getMe(token: string | null | undefined): AuthMeResponse {
     anon_user_id: v.anonUserId,
     segment: acc?.segment ?? null,
     providers: creds.map((c) => c.provider),
+    identifier: creds[0]?.identifier ?? null,
   };
 }
 

@@ -57,6 +57,7 @@ router.post('/register', validateBody(registerSchema), async (req, res, next) =>
 const loginSchema = z.object({
   email: z.string().min(1),
   password: z.string().min(1),
+  link_anon_user_id: z.string().optional(),
 });
 
 router.post('/login', validateBody(loginSchema), async (req, res, next) => {

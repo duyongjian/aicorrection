@@ -45,7 +45,12 @@ function readAuthToken(): string | null {
 export default function LicenseGate({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>('checking');
   const [checkError, setCheckError] = useState<string | null>(null);
-  const [identity, setIdentity] = useState<{ anonUserId: string; segment: Segment } | null>(null);
+  const [identity, setIdentity] = useState<{
+    anonUserId: string;
+    segment: Segment;
+    identifier?: string | null;
+    providers?: string[];
+  } | null>(null);
   const [accountOpen, setAccountOpen] = useState(false);
 
   const checkStatus = useCallback(async () => {
@@ -60,7 +65,12 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
           if (a.active && a.anon_user_id) {
             const seg = (a.segment as Segment) ?? 'gaozhong';
             persistIdentity(a.anon_user_id, seg);
-            setIdentity({ anonUserId: a.anon_user_id, segment: seg });
+            setIdentity({
+              anonUserId: a.anon_user_id,
+              segment: seg,
+              identifier: a.identifier ?? null,
+              providers: a.providers ?? [],
+            });
             setPhase('active');
             return;
           }
@@ -212,7 +222,7 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
         blocking={phase === 'activate'}
         onClose={closeAccount}
         onLogout={handleLogout}
-        segment={identity?.segment}
+        identity={identity}
       />
     </>
   );

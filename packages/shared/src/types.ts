@@ -668,6 +668,11 @@ export interface AuthRegisterRequest {
 export interface AuthLoginRequest {
   email: string;
   password: string;
+  /**
+   * 可选：登录时把浏览器本地匿名身份（anon_user_id）下的错题/归因等记录迁移到本账号。
+   * 提供且有效、且与账号现有 anon_user_id 不同时触发合并；否则忽略。
+   */
+  link_anon_user_id?: string;
 }
 
 /** 发送短信验证码（dev 模式会在响应里回显 dev_code） */
@@ -724,6 +729,8 @@ export interface AuthStatusResponse {
   provider: AuthProvider | null;
   /** 同一 anon_user_id 已绑定的所有登录方式（用于「账号设置」展示） */
   providers: AuthProvider[];
+  /** 主登录标识（邮箱/手机号等，用于「账号设置」展示；匿名态为 null） */
+  identifier?: string | null;
 }
 
 /** 当前账号信息 */
@@ -731,6 +738,8 @@ export interface AuthMeResponse {
   anon_user_id: string | null;
   segment: Segment | null;
   providers: AuthProvider[];
+  /** 主登录标识（邮箱/手机号等；匿名态为 null） */
+  identifier?: string | null;
 }
 
 // ===================== P1 强化期（R09 错因聚合 / R10 薄弱点 / R14 掌握判定 / R11 沉淀 / R13 针对性题组） =====================

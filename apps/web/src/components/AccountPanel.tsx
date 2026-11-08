@@ -19,6 +19,7 @@ import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
 import {
   AUTH_TOKEN_STORAGE_KEY,
   LICENSE_TOKEN_STORAGE_KEY,
+  ANON_USER_STORAGE_KEY,
   SEGMENTS,
   SEGMENT_LABELS,
 } from '@aicorrection/shared';
@@ -38,18 +39,51 @@ interface AccountPanelProps {
   blocking: boolean;
   onClose: () => void;
   onLogout: () => void;
-  /** 已激活时的身份分段（用于设置视图展示）。 */
-  segment?: Segment | null;
+  /** 已激活时的身份（账号标识 / 分段 / 登录方式），用于设置视图展示。 */
+  identity?: {
+    anonUserId: string;
+    segment?: Segment | null;
+    identifier?: string | null;
+    providers?: string[];
+  } | null;
 }
 
-export default function AccountPanel({ open, blocking, onClose, onLogout, segment }: AccountPanelProps) {
+/** 登录方式 → 中文标签。 */
+function providerLabel(p: string): string {
+  switch (p) {
+    case 'password':
+      return '邮箱';
+    case 'sms':
+      return '手机';
+    case 'magic':
+      return '邮箱链接';
+    case 'wechat':
+      return '微信';
+    default:
+      return p;
+  }
+}
+
+/** 读取浏览器本地匿名身份 id（登录/注册时用于把本地错题记录合并到账号）。 */
+function readLocalAnonUserId(): string | null {
+  try {
+    const raw = localStorage.getItem(ANON_USER_STORAGE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw) as { anonUserId?: string };
+    return p && typeof p.anonUserId === 'string' && p.anonUserId ? p.anonUserId : null;
+  } catch {
+    return null;
+  }
+}
+
+export default function AccountPanel({ open, blocking, onClose, onLogout, identity }: AccountPanelProps) {
   // 卡密表单
   const [code, setCode] = useState('');
   // 账号表单
   const [tab, setTab] = useState<'card' | 'account'>('card');
   const [acctTab, setAcctTab] = useState<'pwd' | 'sms' | 'wechat' | 'magic'>('pwd');
   const [pwdMode, setPwdMode] = useState<'login' | 'register'>('login');
-  const [seg, setSeg] = useState<Segment>(segment ?? 'kaoyan');
+  const [seg, setSeg] = useState<Segment>(identity?.segment ?? 'kaoyan');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [phone, setPhone] = useState('');
@@ -96,10 +130,11 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, segmen
     setDevHint(null);
     setSubmitting(true);
     try {
+      const link = readLocalAnonUserId() ?? undefined;
       const res =
         pwdMode === 'register'
-          ? await api.registerWithPassword({ email, password, segment: seg })
-          : await api.loginWithPassword({ email, password });
+          ? await api.registerWithPassword({ email, password, segment: seg, link_anon_user_id: link })
+          : await api.loginWithPassword({ email, password, link_anon_user_id: link });
       try {
         localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, res.auth_token);
       } catch {
@@ -130,7 +165,12 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, segmen
     setFormError(null);
     setSubmitting(true);
     try {
-      const res = await api.verifySmsLogin({ phone, code: smsCode, segment: seg });
+      const res = await api.verifySmsLogin({
+        phone,
+        code: smsCode,
+        segment: seg,
+        link_anon_user_id: readLocalAnonUserId() ?? undefined,
+      });
       try {
         localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, res.auth_token);
       } catch {
@@ -178,7 +218,11 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, segmen
     setFormError(null);
     setSubmitting(true);
     try {
-      const res = await api.magicVerify({ token: magicToken, segment: seg });
+      const res = await api.magicVerify({
+        token: magicToken,
+        segment: seg,
+        link_anon_user_id: readLocalAnonUserId() ?? undefined,
+      });
       try {
         localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, res.auth_token);
       } catch {
@@ -469,14 +513,28 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, segmen
               </Typography>
               <Stack direction="row" alignItems="center" spacing={1.5} sx={{ mt: 0.5 }}>
                 <Chip
-                  label={segment ? SEGMENT_LABELS[segment] : '未指定分段'}
+                  label={identity?.segment ? SEGMENT_LABELS[identity.segment] : '未指定分段'}
                   color="primary"
                   variant="outlined"
                 />
-                <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
-                  本地匿名标识，数据仅用于归因闭环
-                </Typography>
+                {identity?.identifier ? (
+                  <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                    已登录：{identity.identifier}
+                    {identity.providers?.length
+                      ? `（${identity.providers.map(providerLabel).join(' / ')}）`
+                      : ''}
+                  </Typography>
+                ) : (
+                  <Typography sx={{ fontSize: 13, color: 'text.secondary' }}>
+                    本地匿名身份，记录仅存于本设备
+                  </Typography>
+                )}
               </Stack>
+              {identity?.identifier && (
+                <Typography sx={{ fontSize: 12, color: 'text.secondary', mt: 0.75 }}>
+                  你的错题、归因与学习记录均已绑定此账号，跨设备登录可见。
+                </Typography>
+              )}
             </Box>
 
             <Divider />
