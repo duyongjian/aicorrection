@@ -222,6 +222,7 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
         blocking={phase === 'activate'}
         onClose={closeAccount}
         onLogout={handleLogout}
+        onDeleteAccount={handleLogout}
         identity={identity}
       />
     </>

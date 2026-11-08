@@ -3,9 +3,11 @@ import {
   Alert,
   Box,
   Button,
+  Checkbox,
   Chip,
   Dialog,
   Divider,
+  FormControlLabel,
   IconButton,
   MenuItem,
   Stack,
@@ -16,6 +18,7 @@ import {
 } from '@mui/material';
 import CloseIcon from '@mui/icons-material/Close';
 import LogoutOutlinedIcon from '@mui/icons-material/LogoutOutlined';
+import DeleteForeverOutlinedIcon from '@mui/icons-material/DeleteForeverOutlined';
 import {
   AUTH_TOKEN_STORAGE_KEY,
   LICENSE_TOKEN_STORAGE_KEY,
@@ -38,7 +41,10 @@ interface AccountPanelProps {
   /** 未激活时阻塞式打开（禁用关闭 / ESC）。 */
   blocking: boolean;
   onClose: () => void;
+  /** 退出登录 / 切换身份：清本地凭证并回到登录态（服务端会话由本组件先作废）。 */
   onLogout: () => void;
+  /** 注销账号并清除本地记录：清本地凭证并回到激活态（服务端数据由本组件先删除）。 */
+  onDeleteAccount: () => void;
   /** 已激活时的身份（账号标识 / 分段 / 登录方式），用于设置视图展示。 */
   identity?: {
     anonUserId: string;
@@ -76,7 +82,7 @@ function readLocalAnonUserId(): string | null {
   }
 }
 
-export default function AccountPanel({ open, blocking, onClose, onLogout, identity }: AccountPanelProps) {
+export default function AccountPanel({ open, blocking, onClose, onLogout, onDeleteAccount, identity }: AccountPanelProps) {
   // 卡密表单
   const [code, setCode] = useState('');
   // 账号表单
@@ -94,6 +100,11 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, identi
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [devHint, setDevHint] = useState<string | null>(null);
+
+  // 注销确认弹窗状态
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const [ackDelete, setAckDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   // 魔法链接：若 URL 带 ?token= 自动进入账号→魔法页并回填
   useEffect(() => {
@@ -232,6 +243,39 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, identi
     } catch (e) {
       setFormError(describeError(e));
       setSubmitting(false);
+    }
+  };
+
+  // ---------- 退出登录 / 切换身份 ----------
+  const handleSwitch = async () => {
+    setFormError(null);
+    setSubmitting(true);
+    try {
+      // 先作废服务端会话，再清本地凭证（token 仍在 localStorage 时拦截器才能带上）。
+      try {
+        await api.authLogout();
+      } catch {
+        /* 即便服务端失败也继续清本地，避免卡在失效身份 */
+      }
+      onLogout();
+    } catch {
+      setSubmitting(false);
+    }
+  };
+
+  // ---------- 注销账号并清除本地记录（不可逆） ----------
+  const handleDeleteAccount = async () => {
+    setFormError(null);
+    setDeleting(true);
+    try {
+      await api.authDeleteAccount();
+      setConfirmOpen(false);
+      setAckDelete(false);
+      // 服务端数据已清除，清本地凭证并回到激活态。
+      onDeleteAccount();
+    } catch (e) {
+      setFormError(describeError(e));
+      setDeleting(false);
     }
   };
 
@@ -541,17 +585,103 @@ export default function AccountPanel({ open, blocking, onClose, onLogout, identi
 
             <Button
               variant="outlined"
-              color="error"
+              color="primary"
               startIcon={<LogoutOutlinedIcon />}
-              onClick={onLogout}
+              onClick={() => void handleSwitch()}
               sx={{ alignSelf: 'flex-start' }}
             >
               退出登录 / 切换身份
             </Button>
 
+            {identity?.identifier ? (
+              <Button
+                variant="text"
+                color="error"
+                startIcon={<DeleteForeverOutlinedIcon />}
+                onClick={() => {
+                  setFormError(null);
+                  setAckDelete(false);
+                  setConfirmOpen(true);
+                }}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                注销账号并清除本地记录
+              </Button>
+            ) : (
+              <Button
+                variant="text"
+                color="error"
+                startIcon={<DeleteForeverOutlinedIcon />}
+                onClick={() => {
+                  setFormError(null);
+                  setAckDelete(false);
+                  setConfirmOpen(true);
+                }}
+                sx={{ alignSelf: 'flex-start' }}
+              >
+                清除本设备本地记录
+              </Button>
+            )}
+
             <Alert severity="info" variant="outlined">
               {HONEST_NOTE}
             </Alert>
+
+            {/* 注销 / 清除确认弹窗（不可逆，需勾选确认） */}
+            <Dialog
+              open={confirmOpen}
+              onClose={() => {
+                if (!deleting) {
+                  setConfirmOpen(false);
+                  setAckDelete(false);
+                }
+              }}
+              maxWidth="xs"
+              fullWidth
+              PaperProps={{ sx: { borderRadius: '16px', overflow: 'hidden' } }}
+            >
+              <Box sx={{ p: 3 }}>
+                <Typography sx={{ fontWeight: 800, fontSize: 16, mb: 1 }}>
+                  确认{identity?.identifier ? '注销账号' : '清除本设备记录'}？
+                </Typography>
+                <Typography sx={{ fontSize: 13, color: 'text.secondary', mb: 1.5 }}>
+                  {identity?.identifier
+                    ? '此操作将永久删除该账号下的全部服务端数据：错题、归因、练习、自定义知识点、复习计划、掌握度、订阅等，且不可恢复。其他设备登录同一账号后也将不再看到这些数据。'
+                    : '此操作将永久删除本设备身份对应的全部服务端记录（错题、归因、练习等），且不可恢复。'}
+                </Typography>
+                <FormControlLabel
+                  control={
+                    <Checkbox checked={ackDelete} onChange={(e) => setAckDelete(e.target.checked)} />
+                  }
+                  label={<Typography sx={{ fontSize: 13 }}>我已了解此操作不可恢复</Typography>}
+                  sx={{ mb: 1.5 }}
+                />
+                {formError && (
+                  <Alert severity="error" sx={{ mb: 1.5 }}>
+                    {formError}
+                  </Alert>
+                )}
+                <Stack direction="row" spacing={1.5} justifyContent="flex-end">
+                  <Button
+                    onClick={() => {
+                      setConfirmOpen(false);
+                      setAckDelete(false);
+                    }}
+                    disabled={deleting}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    color="error"
+                    variant="contained"
+                    disabled={!ackDelete || deleting}
+                    onClick={() => void handleDeleteAccount()}
+                  >
+                    {deleting ? '处理中…' : identity?.identifier ? '确认注销' : '确认清除'}
+                  </Button>
+                </Stack>
+              </Box>
+            </Dialog>
 
             <Typography variant="caption" color="text.disabled" align="center">
               错题强化闭环 · 内测版 v0.1

@@ -15,7 +15,7 @@
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import { HttpError } from '../middleware/errorHandler';
 import { createAccount, getAccount } from './accountService';
-import { getUser, mergeUserInto } from '../models/userModel';
+import { getUser, mergeUserInto, purgeUserData } from '../models/userModel';
 import { getDb } from '../db';
 import {
   createCredential,
@@ -466,6 +466,17 @@ export function getMe(token: string | null | undefined): AuthMeResponse {
 export function logout(token: string | null | undefined): { ok: boolean } {
   if (token) deleteAuthSession(hashToken(token));
   return { ok: true };
+}
+
+/**
+ * 注销账号：删除该身份下的全部服务端数据并作废会话（不可逆）。
+ * anon_user_id 由门禁中间件从 token 解析后注入（res.locals.identity），
+ * 这里只负责按身份执行彻底清除。凭证（accounts / auth_sessions / license_sessions）
+ * 与业务记录一并随 purgeUserData 删除。
+ */
+export function deleteAccount(anon_user_id: string): { ok: true; purged: boolean } {
+  purgeUserData(anon_user_id);
+  return { ok: true, purged: true };
 }
 
 // ----------------- 小工具 -----------------

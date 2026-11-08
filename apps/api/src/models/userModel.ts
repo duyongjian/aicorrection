@@ -57,3 +57,40 @@ export function mergeUserInto(fromId: string, toId: string): void {
   })();
 }
 
+/**
+ * 彻底注销：删除该 anon_user_id 名下的全部数据（错题/归因/练习/自定义知识点/复习/
+ * 掌握度/商业表/凭证/会话/用户行）。
+ *
+ * 顺序约束：foreign_keys=ON，且 SQLite 不允许在事务内切换 PRAGMA foreign_keys，
+ * 故必须按外键依赖从子表到父表手动删除，最后删 users 行
+ * （accounts / auth_sessions 已设 ON DELETE CASCADE，显式先删亦安全；
+ *  license_sessions 的 anon_user_id 无 FK 指向 users，必须显式删除）。
+ */
+const PURGE_TABLES = [
+  'attributions', // 引用 loop_sessions.loop_id / mistakes.mistake_id，须最先删
+  'mistakes',
+  'loop_sessions',
+  'practice_items',
+  'custom_knowledge_points',
+  'review_sessions',
+  'review_schedule',
+  'mastery_state',
+  'analytics_events',
+  'subscriptions',
+  'payments',
+  'accounts', // ON DELETE CASCADE，显式删安全
+  'auth_sessions', // ON DELETE CASCADE，显式删安全
+  'license_sessions', // 无 FK 指向 users，必须显式删
+] as const;
+
+export function purgeUserData(anon_user_id: string): void {
+  if (!anon_user_id || !getUser(anon_user_id)) return;
+  const db = getDb();
+  db.transaction(() => {
+    for (const t of PURGE_TABLES) {
+      db.prepare(`DELETE FROM ${t} WHERE anon_user_id = ?`).run(anon_user_id);
+    }
+    deleteUser(anon_user_id);
+  })();
+}
+

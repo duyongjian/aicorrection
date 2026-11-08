@@ -370,6 +370,11 @@ export const api = {
     return http.post('/auth/logout').then((r) => r.data.data);
   },
 
+  /** 注销账号：删除该身份下的全部服务端记录并作废会话（不可逆）。 */
+  authDeleteAccount(): Promise<{ ok: boolean; purged: boolean }> {
+    return http.post('/auth/delete-account').then((r) => r.data.data);
+  },
+
   createAccount(req: CreateAccountRequest): Promise<AccountResponse> {
     return http.post('/account', req).then((r) => r.data.data);
   },

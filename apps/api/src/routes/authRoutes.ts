@@ -7,6 +7,8 @@ import { Router } from 'express';
 import { z } from 'zod';
 import { env } from '../config/env';
 import { validateBody } from '../middleware/validate';
+import { HttpError } from '../middleware/errorHandler';
+import { verifyIdentityToken } from '../middleware/requireLicense';
 import { ok } from '../utils/result';
 import {
   registerWithPassword,
@@ -19,8 +21,9 @@ import {
   getAuthStatus,
   getMe,
   logout,
+  deleteAccount,
 } from '../services/authService';
-import { AUTH_COOKIE_NAME } from '@aicorrection/shared';
+import { AUTH_COOKIE_NAME, ERROR_CODES } from '@aicorrection/shared';
 
 const router = Router();
 
@@ -35,6 +38,11 @@ function setUploadCookie(res: import('express').Response, token: string): void {
     path: `${env.API_BASE_PATH}/uploads`,
     maxAge: maxAgeSec * 1000,
   });
+}
+
+/** 登出/注销时作废 uploads 专用 HttpOnly cookie（路径需与下发一致）。 */
+function clearUploadCookie(res: import('express').Response): void {
+  res.clearCookie(AUTH_COOKIE_NAME, { path: `${env.API_BASE_PATH}/uploads` });
 }
 
 const registerSchema = z.object({
@@ -146,7 +154,31 @@ router.post('/logout', async (req, res, next) => {
       (req.header('x-auth-token') || '').trim() ||
       (req.header('authorization') || '').replace(/^Bearer\s+/i, '').trim();
     logout(token);
+    clearUploadCookie(res);
     res.json(ok({ ok: true }));
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * 注销账号并清除全部服务端记录（不可逆）。
+ * 身份从请求 token 自身解析（auth 或 license token 均可，门禁无论是否启用都能校验），
+ * 不依赖 res.locals.identity——因为 LICENSE_GATE_ENABLED=false 时门禁会直接 next()
+ * 而不注入 identity。解析失败（无 token / token 失效）则 401。
+ */
+router.post('/delete-account', async (req, res, next) => {
+  try {
+    const token =
+      (req.header('x-auth-token') || '').trim() ||
+      (req.header('authorization') || '').replace(/^Bearer\s+/i, '').trim();
+    const v = verifyIdentityToken(token || null);
+    if (!v.ok) {
+      throw new HttpError(ERROR_CODES.AUTH_REQUIRED, 401, '请先登录或激活后再注销');
+    }
+    const r = deleteAccount(v.anonUserId);
+    clearUploadCookie(res);
+    res.json(ok(r));
   } catch (e) {
     next(e);
   }
