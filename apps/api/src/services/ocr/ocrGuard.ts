@@ -144,10 +144,10 @@ export function decideAutoOcrResult(
  * **绝不用**裸数字、×、¥、% 作为信号（否则收据 / 账单会被误判为题目）。
  */
 const ACADEMIC_WORD_RE =
-  /(题|解|求|证明|计算|算|方程|等式|函数|已知|设|化简|比较|大于|小于|等于|因为|所以|答|选择|选项|填空|判断|导数|积分|极限|矩阵|概率|极值|单调|数列|向量|微分|不等式)/;
+  /(题目|习题|试题|解题|方程|等式|函数|求导|导数|积分|极限|矩阵|概率|极值|单调|数列|向量|微分|不等式|填空|选项|化简|比较|证明|已知|因为|所以|判断|选择)/;
 const MATH_STRUCT_RE = /[∫√∑∏∂∇π∞≤≥≠≈²³¹⁰½¼¾±^]/;
 const OPTION_RE = /[A-Ea-e][\.、)）]/;
-const VAR_CONTEXT_RE = /[a-zA-Z]\s*[=+\-]|[=+\-]\s*[a-zA-Z]|[a-zA-Z]\(/;
+const VAR_CONTEXT_RE = /[a-z]\s*[=+\-]|[=+\-]\s*[a-z]|[a-z]\(/;
 
 export function hasAcademicSignal(text: string): boolean {
   const t = text ?? '';
@@ -163,11 +163,23 @@ export function hasAcademicSignal(text: string): boolean {
  * 确定性拒识兜底：对 success / partial 结果，若题干无任何学术信号则强制 fail。
  * 已 fail 或空文本原样返回（含 rejected 路径，仍是 fail），幂等。
  */
+/** 剥离本地 OCR / 视觉模型两段前缀行，仅对纯题目内容判定学术信号，避免「MiniCPM-V」里的 M- 被 VAR_CONTEXT_RE 误判为变量语境。 */
+function stripOcrPrefixes(text: string): string {
+  return (text ?? '')
+    .split('\n')
+    .filter(
+      (line) =>
+        !line.includes(OCR_LOCAL_PREFIX) && !line.includes(OCR_VISION_PREFIX)
+    )
+    .join('\n');
+}
+
 export function enforceAcademicSignal(result: OcrResult): OcrResult {
   if (result.ocr_status === 'fail') return result; // 已是 fail（含 rejected 路径），原样返回
   const q = (result.question ?? '').trim();
-  if (!q || !hasAcademicSignal(q)) {
-    // 空文本 / 无任何学术信号 → 确定性 fail，绝不进归因 / 错题本
+  if (!q) return { ocr_status: 'fail', question: '', latex: null };
+  // 必须在剥离前缀后的纯内容判定：否则视觉前缀里的「M-」令任意转写文本恒有信号，闸门失效
+  if (!hasAcademicSignal(stripOcrPrefixes(q))) {
     return { ocr_status: 'fail', question: '', latex: null };
   }
   return result;

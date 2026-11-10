@@ -266,3 +266,41 @@ test('enforceAcademicSignal：已 fail / 空文本 → 原样返回（幂等）'
   const empty: OcrResult = { ocr_status: 'success', question: '   ', latex: null };
   assert.equal(enforceAcademicSignal(empty).ocr_status, 'fail');
 });
+
+// ---- 回归测试：捕获 1a0f8ce 闸门的两次实现 bug（V4 重跑 #4 暴露）----
+
+test('hasAcademicSignal：含「议题」的会议通知 → false（题单字不能命中议题/主题）', () => {
+  assert.equal(hasAcademicSignal('本周末团建，议题一请各位同事准时参加'), false);
+  assert.equal(hasAcademicSignal('本次会议主题：季度复盘'), false);
+});
+
+test('enforceAcademicSignal：带视觉前缀的 receipt 合并文本 → 仍 fail（前缀不得击穿闸门）', () => {
+  const withPrefix = `${OCR_VISION_PREFIX}\n可乐 12.50 雪碧 8.00 合计 20.50 现金支付`;
+  const r = enforceAcademicSignal({
+    ocr_status: 'success',
+    question: withPrefix,
+    latex: null,
+  });
+  assert.equal(r.ocr_status, 'fail');
+});
+
+test('enforceAcademicSignal：带视觉前缀的会议通知 → 仍 fail（前缀 + 议题 双重击穿防护）', () => {
+  const withPrefix = `${OCR_VISION_PREFIX}\n本周末团建爬山活动安排如下，议题一请准时参加`;
+  const r = enforceAcademicSignal({
+    ocr_status: 'success',
+    question: withPrefix,
+    latex: null,
+  });
+  assert.equal(r.ocr_status, 'fail');
+});
+
+test('enforceAcademicSignal：带本地+视觉前缀的真实题目合并文本 → 保持 success', () => {
+  const merged =
+    `${OCR_LOCAL_PREFIX}\n解方程：2x+3=11\n\n${OCR_VISION_PREFIX}\n解方程 2x+3=11，小明算出 x=7`;
+  const r = enforceAcademicSignal({
+    ocr_status: 'success',
+    question: merged,
+    latex: null,
+  });
+  assert.equal(r.ocr_status, 'success');
+});
