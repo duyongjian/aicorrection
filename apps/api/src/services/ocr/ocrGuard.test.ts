@@ -17,6 +17,8 @@ import {
   isRejectedOcrText,
   mergeOcr,
   decideAutoOcrResult,
+  hasAcademicSignal,
+  enforceAcademicSignal,
   type VisionOutcome,
   type OcrResult,
 } from './ocrGuard';
@@ -207,4 +209,60 @@ test('OCR_PROMPT 含「所有选项」指令与拒识哨兵', () => {
   assert.ok(OCR_PROMPT.includes('所有选项'));
   assert.ok(OCR_PROMPT.includes(OCR_REJECT_TOKEN));
   assert.ok(OCR_PROMPT.includes('不得省略'));
+});
+
+// ---------------- 确定性拒识兜底（V4 收口关键）----------------
+
+test('hasAcademicSignal：含数学结构符号的纯公式图 → true', () => {
+  assert.equal(hasAcademicSignal('∫₀^∞ e^(−x²) dx = √π/2'), true);
+});
+
+test('hasAcademicSignal：含中文题目词的方程 → true', () => {
+  assert.equal(hasAcademicSignal('解方程：2x+3=11'), true);
+  assert.equal(hasAcademicSignal('设函数 z=z(x,y) 由方程 x−az=e^(y+az)'), true);
+});
+
+test('hasAcademicSignal：含选项标号 → true', () => {
+  assert.equal(hasAcademicSignal('下列说法正确的是 A) 1 B) 2 C) 3'), true);
+});
+
+test('hasAcademicSignal：会议通知（无数学/题目信号）→ false', () => {
+  assert.equal(hasAcademicSignal('本周末团建爬山活动安排如下，请各位同事准时参加'), false);
+});
+
+test('hasAcademicSignal：收据（含金额数字但无学术信号）→ false', () => {
+  assert.equal(hasAcademicSignal('可乐 12.50 雪碧 8.00 合计 20.50 现金支付'), false);
+  assert.equal(hasAcademicSignal('商品名称 数量 单价 金额 收款员'), false);
+});
+
+test('hasAcademicSignal：空串 → false', () => {
+  assert.equal(hasAcademicSignal(''), false);
+});
+
+test('enforceAcademicSignal：无学术信号的 success → 降级为 fail', () => {
+  const r = enforceAcademicSignal({
+    ocr_status: 'success',
+    question: '可乐 12.50 雪碧 8.00 合计 20.50',
+    latex: null,
+  });
+  assert.equal(r.ocr_status, 'fail');
+  assert.equal(r.question, '');
+  assert.equal(r.latex, null);
+});
+
+test('enforceAcademicSignal：有学术信号的 success → 保持 success', () => {
+  const r = enforceAcademicSignal({
+    ocr_status: 'success',
+    question: '解方程：2x+3=11，小明算出 x=7',
+    latex: null,
+  });
+  assert.equal(r.ocr_status, 'success');
+  assert.ok(r.question.includes('解方程'));
+});
+
+test('enforceAcademicSignal：已 fail / 空文本 → 原样返回（幂等）', () => {
+  const fail: OcrResult = { ocr_status: 'fail', question: '', latex: null };
+  assert.equal(enforceAcademicSignal(fail).ocr_status, 'fail');
+  const empty: OcrResult = { ocr_status: 'success', question: '   ', latex: null };
+  assert.equal(enforceAcademicSignal(empty).ocr_status, 'fail');
 });

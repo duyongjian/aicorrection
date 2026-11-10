@@ -24,6 +24,7 @@ import {
   OCR_PROMPT,
   isRejectedOcrText,
   decideAutoOcrResult,
+  enforceAcademicSignal,
   type VisionOutcome,
   type OcrResult,
 } from './ocrGuard';
@@ -117,7 +118,7 @@ export async function recognizeImage(
     const vision = await recognizeVisionSafe(imagePath).catch(
       (): VisionOutcome => ({ kind: 'unavailable' })
     );
-    return decideAutoOcrResult(local, vision);
+    return enforceAcademicSignal(decideAutoOcrResult(local, vision));
   }
   return local;
 }
@@ -219,12 +220,12 @@ async function recognizeImageLocal(
     }
   }
 
-  return {
+  return enforceAcademicSignal({
     ocr_status: 'success',
     // 让下游归因 prompt 能看到公式，否则公式识别白做
     question: latex ? `${question}\n【公式】${latex}` : question,
     latex,
-  };
+  });
 }
 
 /** 视觉大模型图片识别（LLM 模式 / auto 降级路径，逻辑与改造前一致）。 */
@@ -243,7 +244,7 @@ async function recognizeImageByLlm(imagePath: string): Promise<OcrResult> {
     if (!text || isRejectedOcrText(text)) {
       return { ocr_status: 'fail', question: '', latex: null };
     }
-    return { ocr_status: 'success', question: text, latex: null };
+    return enforceAcademicSignal({ ocr_status: 'success', question: text, latex: null });
   } catch {
     // 视觉模型不可用（如 VISION_MODEL 未拉取）→ Mock 占位题干兜底，保证图片入口仍可演示
     if (env.AUTO_FALLBACK_TO_MOCK) {

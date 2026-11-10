@@ -127,3 +127,48 @@ export function decideAutoOcrResult(
   // ok：拒识判定已在 merge 之前逐源完成（recognizeVisionSafe），此处只做合并。
   return mergeOcr(local, outcome.result);
 }
+
+/**
+ * 学术 / 题目信号检测（V4 收口的关键确定性兜底）。
+ *
+ * 背景：视觉模型对边界非题目（收据 / 发票 / 会议通知等）的拒识判定存在**采样非确定性**——
+ * 同一张图同 prompt 可能一次拒识、一次转写（复验已实测 receipt_01 在 reject↔transcribe 间横跳）。
+ * 仅靠模型单次吐「非题目」token 无法 100% 保证拒识，纯 prompt 调参已到天花板。
+ *
+ * 故在「软拒识 token」之外，增加**确定性内容闸门**：任何 success / partial 的题干文本，
+ * 若不含任何学术 / 题目信号，一律确定性归为 fail（绝不进归因 / 错题本）。
+ * 这是对原 P0 验收口径「(b) 加题目 / 拒识校验层」的落地——把拒识从「依赖模型单次决策」
+ * 升级为「内容确定性判定」，从根上消除非确定性漏放。
+ *
+ * 设计铁律：只用**强学术信号**——中文题目词 / 结构数学符号 / 选项标号 / 变量数学语境；
+ * **绝不用**裸数字、×、¥、% 作为信号（否则收据 / 账单会被误判为题目）。
+ */
+const ACADEMIC_WORD_RE =
+  /(题|解|求|证明|计算|算|方程|等式|函数|已知|设|化简|比较|大于|小于|等于|因为|所以|答|选择|选项|填空|判断|导数|积分|极限|矩阵|概率|极值|单调|数列|向量|微分|不等式)/;
+const MATH_STRUCT_RE = /[∫√∑∏∂∇π∞≤≥≠≈²³¹⁰½¼¾±^]/;
+const OPTION_RE = /[A-Ea-e][\.、)）]/;
+const VAR_CONTEXT_RE = /[a-zA-Z]\s*[=+\-]|[=+\-]\s*[a-zA-Z]|[a-zA-Z]\(/;
+
+export function hasAcademicSignal(text: string): boolean {
+  const t = text ?? '';
+  if (!t) return false;
+  if (ACADEMIC_WORD_RE.test(t)) return true;
+  if (MATH_STRUCT_RE.test(t)) return true;
+  if (OPTION_RE.test(t)) return true;
+  if (VAR_CONTEXT_RE.test(t)) return true;
+  return false;
+}
+
+/**
+ * 确定性拒识兜底：对 success / partial 结果，若题干无任何学术信号则强制 fail。
+ * 已 fail 或空文本原样返回（含 rejected 路径，仍是 fail），幂等。
+ */
+export function enforceAcademicSignal(result: OcrResult): OcrResult {
+  if (result.ocr_status === 'fail') return result; // 已是 fail（含 rejected 路径），原样返回
+  const q = (result.question ?? '').trim();
+  if (!q || !hasAcademicSignal(q)) {
+    // 空文本 / 无任何学术信号 → 确定性 fail，绝不进归因 / 错题本
+    return { ocr_status: 'fail', question: '', latex: null };
+  }
+  return result;
+}
