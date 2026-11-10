@@ -27,6 +27,18 @@ function formatFileSize(bytes: number): string {
   return `${(kb / 1024).toFixed(1)} MB`;
 }
 
+/** 将图片文件读为 data: URL（base64）。相比 URL.createObjectURL 生成的 blob: URL，
+ *  data: 被 helmet 默认 CSP 的 img-src 'self' data: 允许，可被 <img> 直接渲染，
+ *  从而避免预览被 CSP 拦截（"照片预览加载失败"）。 */
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error ?? new Error('readAsDataURL failed'));
+    reader.readAsDataURL(file);
+  });
+}
+
 /** R01 上传：拍照 / 文本 / 粘贴 + 草稿恢复（UPL-01） */
 export default function UploadPage() {
   const navigate = useNavigate();
@@ -122,7 +134,8 @@ export default function UploadPage() {
         bmp.close();
       }
       if (seq !== fileSeqRef.current) return; // 用户已重新选择，丢弃过期结果
-      const url = URL.createObjectURL(f);
+      // 用 data: URL 而非 blob:，规避 helmet 默认 CSP 对 blob: 图片的拦截
+      const url = await readFileAsDataUrl(f);
       previewUrlRef.current = url;
       setPreviewUrl(url);
     } catch {
