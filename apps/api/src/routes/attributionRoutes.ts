@@ -10,6 +10,7 @@ import { getLoopDetail } from '../models/loopDetailModel';
 import { HttpError } from '../middleware/errorHandler';
 import { ok } from '../utils/result';
 import { validateBody } from '../middleware/validate';
+import { ERROR_CODES } from '@aicorrection/shared';
 
 const router = Router();
 
@@ -65,11 +66,11 @@ router.get('/:loop_id/detail', (req, res, next) => {
     const loop_id = String(req.params.loop_id ?? '').trim();
     const anon_user_id = String(req.query.anon_user_id ?? '').trim();
     if (!loop_id || !anon_user_id) {
-      throw new HttpError('INVALID_PARAM', 400, 'loop_id 与 anon_user_id 必填');
+      throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, 'loop_id 与 anon_user_id 必填');
     }
     const detail = getLoopDetail(loop_id, anon_user_id);
     if (!detail) {
-      throw new HttpError('NOT_FOUND', 404, '未找到该闭环记录');
+      throw new HttpError(ERROR_CODES.NOT_FOUND, 404, '未找到该闭环记录');
     }
     res.json(ok(detail));
   } catch (e) {
