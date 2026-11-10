@@ -38,9 +38,38 @@ class _SilenceStdout:
         return False
 
 
+# 全局懒加载单例：serve 模式复用，避免每次请求重新构造引擎（P1-b）。
+# 单次模式同样走这里，无副作用（首次构造，之后命中缓存）。
+_RAPID = None
+_PADDLE = None
+_FORMULA = None
+
+
+def _get_rapid():
+    global _RAPID
+    if _RAPID is None:
+        from rapidocr import RapidOCR
+        _RAPID = RapidOCR()  # 默认 onnxruntime 后端
+    return _RAPID
+
+
+def _get_paddle():
+    global _PADDLE
+    if _PADDLE is None:
+        _PADDLE = _build_paddleocr()
+    return _PADDLE
+
+
+def _get_formula():
+    global _FORMULA
+    if _FORMULA is None:
+        from paddleocr import FormulaRecognition
+        _FORMULA = FormulaRecognition(model_name="PP-FormulaNet-S")
+    return _FORMULA
+
+
 def run_rapid(img: str, formula: bool):
-    from rapidocr import RapidOCR
-    engine = RapidOCR()  # 默认 onnxruntime 后端
+    engine = _get_rapid()
     t0 = time.time()
     result = engine(img)  # RapidOCROutput
     wall = time.time() - t0
@@ -100,8 +129,7 @@ def run_paddle(img: str, formula: bool):
         _lg.removeHandler(_h)
 
     if formula:
-        from paddleocr import FormulaRecognition
-        model = FormulaRecognition(model_name="PP-FormulaNet-S")
+        model = _get_formula()
         t0 = time.time()
         with _SilenceStdout():
             output = model.predict(input=img)
@@ -115,7 +143,7 @@ def run_paddle(img: str, formula: bool):
             if latex:
                 texts.append({"text": latex, "score": 1.0, "box": None})
         return texts, 0.0, wall
-    ocr = _build_paddleocr()
+    ocr = _get_paddle()
     t0 = time.time()
     with _SilenceStdout():
         try:
@@ -181,12 +209,95 @@ def run_tesseract(img: str, formula: bool):
     return texts, wall, wall
 
 
+def run_serve() -> None:
+    """常驻服务模式（P1-b）：模型只加载一次，之后每个请求复用同一进程。
+
+    启动时一次性加载 RapidOCR / PP-FormulaNet-S / Paddle 文本引擎并缓存到模块全局，
+    全部就绪后打印一行 {"ready":true,"engine":"serve"} 并 flush。
+    随后循环从 stdin 读一行请求 JSON {"id"?, "engine", "image", "formula"} 直到 EOF；
+    对每个请求复用缓存引擎，构建与单次模式完全相同的 payload，向 stdout 写恰好一行
+    {"req":<原样回显的请求>,"payload":<payload>} 并 flush。EOF 后退出 0。
+    """
+    sys.stdout.reconfigure(encoding="utf-8")
+    try:
+        # 一次性加载并缓存全部引擎
+        _get_rapid()
+        _get_formula()
+        _get_paddle()
+    except Exception as e:  # noqa: BLE001
+        print(json.dumps({"ready": False, "error": str(e)}), flush=True)
+        sys.exit(1)
+
+    print(json.dumps({"ready": True, "engine": "serve"}), flush=True)
+
+    for raw_line in sys.stdin:
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            req = json.loads(line)
+        except Exception:  # noqa: BLE001
+            continue  # 丢弃无法解析的行
+
+        engine = req.get("engine", "rapid")
+        image = req.get("image", "")
+        formula = bool(req.get("formula", False))
+
+        try:
+            if engine == "rapid":
+                texts, elapse, wall = run_rapid(image, formula)
+            elif engine == "tesseract":
+                texts, elapse, wall = run_tesseract(image, formula)
+            else:
+                texts, elapse, wall = run_paddle(image, formula)
+            payload = {
+                "ok": True,
+                "engine": engine,
+                "formula": formula,
+                "elapsed_wall": round(wall, 3),
+                "elapsed_engine": round(float(elapse), 3),
+                "count": len(texts),
+                "texts": texts,
+            }
+        except Exception as e:  # noqa: BLE001
+            payload = {
+                "ok": False,
+                "engine": engine,
+                "formula": formula,
+                "error": str(e),
+            }
+
+        # 每个请求恰好写一行；原样回显 req（含 id，供 Node 端按 id 关联响应）
+        out = {"req": req, "payload": payload}
+        sys.stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
+        sys.stdout.flush()
+
+    sys.exit(0)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--engine", choices=["rapid", "paddle", "tesseract"], default="rapid")
-    ap.add_argument("--image", required=True)
+    ap.add_argument("--image", default=None)
     ap.add_argument("--formula", action="store_true")
+    ap.add_argument("--serve", action="store_true")
     args = ap.parse_args()
+
+    # 服务模式：模型只加载一次，常驻进程处理所有请求（见 run_serve）
+    if args.serve:
+        run_serve()
+        return
+
+    if not args.image:
+        payload = {
+            "ok": False,
+            "engine": args.engine,
+            "formula": args.formula,
+            "error": "单次模式必须提供 --image",
+        }
+        sys.stdout.reconfigure(encoding="utf-8")
+        print(json.dumps(payload, ensure_ascii=False))
+        return
 
     try:
         if args.formula and args.engine != "paddle":

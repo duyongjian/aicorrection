@@ -130,6 +130,11 @@ export const env = {
     path.resolve(__dirname, '../../scripts/ocr/ocr_cli.py'),
   /** 本地 OCR 子进程超时（Paddle 冷启可能 17s+，比 OCR_TIMEOUT_MS 更宽松） */
   OCR_LOCAL_TIMEOUT_MS: toNum(process.env.OCR_LOCAL_TIMEOUT_MS, 60_000),
+  /**
+   * 本地 OCR 常驻进程（serve 模式，P1-b）：模型只加载一次，消除每次调用的 Python 启动
+   * 与 Paddle/Rapid 重载开销（~16-18s 地板）。默认 true。false 退回每次 spawn 单次模式。
+   */
+  OCR_PERSISTENT: toBool(process.env.OCR_PERSISTENT, true),
 
   // ---- 识别端（视觉大模型）按需拉起 ----
   // 背景：显存 8188 MiB 装不下「分析 27B」+「识别 8B」同时常驻，
