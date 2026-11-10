@@ -46,6 +46,13 @@ export default function AttributionPage() {
     // T2: screen_view 埋点 — 归因页（screenName='attr_show'，与 followup 同页区分）
     tracker.screenView('attr_show');
     if (!attribution) {
+      // 拒识 / 识别失败（ocr_status=fail 或题干为空）：跳过自动归因。
+      // 否则 zod question.min(1) 会先抛 400，用户看到「归因失败」而非「非题目」提示；
+      // 改由 OcrFeedback 直接给出「未检测到题目 / 识别失败」引导（体验项，非安全拦截点）。
+      if (loop.ocr_status === 'fail' || !loop.question?.trim()) {
+        setStatus('idle');
+        return;
+      }
       setStatus('loading');
       runAttribution()
         .then((d) => {

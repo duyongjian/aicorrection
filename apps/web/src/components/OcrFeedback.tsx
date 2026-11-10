@@ -6,7 +6,7 @@ export default function OcrFeedback({ ocrStatus }: { ocrStatus: OcrStatus }) {
   if (ocrStatus === 'fail') {
     return (
       <Alert severity="error" sx={{ mb: 2 }}>
-        图片识别失败。请重拍清晰照片，或改用文本 / 粘贴入口提交题目。
+        未检测到题目或图片识别失败，请上传含题目的清晰照片，或改用文本 / 粘贴入口提交题目。
       </Alert>
     );
   }

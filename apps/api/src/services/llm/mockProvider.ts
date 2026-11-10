@@ -20,7 +20,7 @@ function detectSubject(text: string): Subject {
   return 'general';
 }
 
-const MOCK_PLACEHOLDER_QUESTION =
+export const MOCK_PLACEHOLDER_QUESTION =
   '（示例占位题干）检测到题目区域，但 OCR 内容不完整。请改用文本入口补充题目，或重拍清晰照片以继续五步闭环演示。';
 
 export class MockProvider implements LlmProvider {

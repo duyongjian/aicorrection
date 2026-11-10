@@ -14,29 +14,28 @@ import { ensureRecognitionReady } from './recognitionAutostart';
 import { MockProvider } from '../llm/mockProvider';
 import { env } from '../../config/env';
 import { MOCK_ATTR_MODEL_VERSION } from '@aicorrection/shared';
-import type { OcrStatus } from '@aicorrection/shared';
 import {
   runLocalOcr,
   type LocalOcrEngine,
 } from './localOcrService';
 import { validateLatex } from './latexGuard';
 import { withTimeout } from '../../utils/promise';
+import {
+  OCR_PROMPT,
+  isRejectedOcrText,
+  decideAutoOcrResult,
+  type VisionOutcome,
+  type OcrResult,
+} from './ocrGuard';
 
-export interface OcrResult {
-  ocr_status: OcrStatus;
-  question: string;
-  /** 公式识别得到的 LaTeX（仅本地 paddle 公式分支产出，其余为 null） */
-  latex?: string | null;
-}
+// 兼容外部仍从 ocrService 引用该类型（OcrResult 定义已迁入 ocrGuard.ts，单一来源）。
+export type { OcrResult } from './ocrGuard';
 
 export interface RecognizeImageOpts {
   subject?: string;
   /** 仅用于日志定位：丢弃臆造 LaTeX 时打印，便于回溯是否误杀 */
   loopId?: string;
 }
-
-const OCR_PROMPT =
-  '请将图片中的题目转为纯文本标准化题干，仅输出题目正文，不要解释、不要作答。';
 
 /** 本地 OCR 文本引擎名（受 OCR_TEXT_ENGINE 配置约束） */
 const TEXT_ENGINE: LocalOcrEngine = env.OCR_TEXT_ENGINE;
@@ -114,9 +113,11 @@ export async function recognizeImage(
     return recognizeImageByLlm(imagePath);
   }
   if (env.OCR_COMBO) {
-    // 视觉大模型作为第二路证据：成功则合并，失败则静默保留本地结果（绝不 mock）。
-    const vision = await recognizeVisionSafe(imagePath).catch(() => null);
-    if (vision) return mergeOcr(local, vision);
+    // 视觉大模型作为第二路证据：三态决策（rejected 必须覆盖本地结果，见 ocrGuard）。
+    const vision = await recognizeVisionSafe(imagePath).catch(
+      (): VisionOutcome => ({ kind: 'unavailable' })
+    );
+    return decideAutoOcrResult(local, vision);
   }
   return local;
 }
@@ -135,40 +136,37 @@ async function recognizeImageLocalSafe(
 
 /**
  * 视觉大模型语义描述（MiniCPM-V 等），识别双通道的第二路证据。
- * 失败/不可达/超时 → 返回 null（不 mock、不抛错，由 mergeOcr 上层决定是否仍用本地结果）。
+ * 返回三态 VisionOutcome：
+ *   - 探活失败 / 异常 / 超时 / mock / 空文本 → unavailable（上层静默保留本地结果）
+ *   - 模型明确输出拒识标记 → rejected（上层必须覆盖本地结果为 fail，绝不 mock）
+ *   - 拿到题目文本 → ok
+ * 绝不 mock：占位题干不得冒充视觉证据。
  */
-async function recognizeVisionSafe(imagePath: string): Promise<OcrResult | null> {
-  const ready = await ensureRecognitionReady();
-  if (!ready) return null;
-  const provider = getRecognitionProvider();
-  const base64 = fs.readFileSync(imagePath).toString('base64');
+async function recognizeVisionSafe(imagePath: string): Promise<VisionOutcome> {
   try {
+    const ready = await ensureRecognitionReady();
+    if (!ready) return { kind: 'unavailable' };
+    const provider = getRecognitionProvider();
+    // 绝不 mock：真实模型缺失时不得把 MockProvider 占位题干当视觉证据。
+    if (provider.name === 'mock' || provider.name === MOCK_ATTR_MODEL_VERSION) {
+      return { kind: 'unavailable' };
+    }
+    const base64 = fs.readFileSync(imagePath).toString('base64');
     const res = await withTimeout(
       provider.chatWithImage(base64, OCR_PROMPT),
       env.OCR_LOCAL_TIMEOUT_MS
     );
     const text = (res.text ?? '').trim();
-    if (!text) return null;
-    return { ocr_status: 'success', question: text, latex: null };
+    // 拒识判定必须早于空串 / 成功返回：token 是非空文本。
+    if (isRejectedOcrText(text)) return { kind: 'rejected' };
+    if (!text) return { kind: 'unavailable' };
+    return {
+      kind: 'ok',
+      result: { ocr_status: 'success', question: text, latex: null },
+    };
   } catch {
-    return null;
+    return { kind: 'unavailable' };
   }
-}
-
-/**
- * 合并本地 OCR 与视觉大模型结果：二者拼接成同一题干，一起交给归因大模型交叉核对。
- * 本地 OCR 擅长精确字符（含公式块），视觉模型擅长整体语义/排版，互补可减少识别误差。
- */
-function mergeOcr(local: OcrResult, vision: OcrResult): OcrResult {
-  const parts = [`【本地OCR识别】\n${local.question}`];
-  if (vision.question.trim()) {
-    parts.push(`【视觉模型描述(MiniCPM-V)】\n${vision.question.trim()}`);
-  }
-  return {
-    ocr_status: local.ocr_status === 'success' ? 'success' : 'partial',
-    question: parts.join('\n\n'),
-    latex: local.latex ?? null,
-  };
 }
 
 /**
@@ -242,7 +240,7 @@ async function recognizeImageByLlm(imagePath: string): Promise<OcrResult> {
       // Mock 视觉模型：占位题干，标记 partial，闭环仍可继续演示
       return { ocr_status: 'partial', question: text, latex: null };
     }
-    if (!text) {
+    if (!text || isRejectedOcrText(text)) {
       return { ocr_status: 'fail', question: '', latex: null };
     }
     return { ocr_status: 'success', question: text, latex: null };
