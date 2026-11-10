@@ -25,6 +25,7 @@ import {
   isRejectedOcrText,
   decideAutoOcrResult,
   enforceAcademicSignal,
+  localIsSufficient,
   type VisionOutcome,
   type OcrResult,
 } from './ocrGuard';
@@ -114,7 +115,11 @@ export async function recognizeImage(
     return recognizeImageByLlm(imagePath);
   }
   if (env.OCR_COMBO) {
-    // 视觉大模型作为第二路证据：三态决策（rejected 必须覆盖本地结果，见 ocrGuard）。
+    // P1 时延优化：本地 OCR 已充分捕捉题目信号（选择题抓全 4 选项 / 含强数学结构），
+    // 视觉第二路是冗余且额外 +~24s，确定性跳过，直接返回本地结果（仍过学术闸门）。
+    if (localIsSufficient(local)) {
+      return enforceAcademicSignal(local);
+    }
     const vision = await recognizeVisionSafe(imagePath).catch(
       (): VisionOutcome => ({ kind: 'unavailable' })
     );

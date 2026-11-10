@@ -19,6 +19,7 @@ import {
   decideAutoOcrResult,
   hasAcademicSignal,
   enforceAcademicSignal,
+  localIsSufficient,
   type VisionOutcome,
   type OcrResult,
 } from './ocrGuard';
@@ -303,4 +304,53 @@ test('enforceAcademicSignal：带本地+视觉前缀的真实题目合并文本 
     latex: null,
   });
   assert.equal(r.ocr_status, 'success');
+});
+
+// ---------------- localIsSufficient（V5 时延优化，P1）----------------
+
+test('localIsSufficient：选择题抓全 4 选项 → true', () => {
+  const q =
+    '下列说法正确的是？\nA. 1\nB. 2\nC. 3\nD. 4';
+  assert.equal(
+    localIsSufficient({ ocr_status: 'success', question: q, latex: null }),
+    true
+  );
+  // ocr_status 非 success → false
+  assert.equal(
+    localIsSufficient({ ocr_status: 'partial', question: q, latex: null }),
+    false
+  );
+});
+
+test('localIsSufficient：纯公式含 ∫ → true', () => {
+  assert.equal(
+    localIsSufficient({
+      ocr_status: 'success',
+      question: '∫₀^∞ e^(−x²) dx = √π/2',
+      latex: null,
+    }),
+    true
+  );
+});
+
+test('localIsSufficient：含学术词但 <4 选项且无数学结构 → false', () => {
+  assert.equal(
+    localIsSufficient({
+      ocr_status: 'success',
+      question: '解方程：2x+3=11',
+      latex: null,
+    }),
+    false
+  );
+});
+
+test('localIsSufficient：收据（无学术信号）→ false', () => {
+  assert.equal(
+    localIsSufficient({
+      ocr_status: 'success',
+      question: '可乐 12.50 雪碧 8.00 合计 20.50',
+      latex: null,
+    }),
+    false
+  );
 });

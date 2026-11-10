@@ -184,3 +184,25 @@ export function enforceAcademicSignal(result: OcrResult): OcrResult {
   }
   return result;
 }
+
+/**
+ * 本地 OCR 是否已充分捕捉题目信号，可确定性跳过视觉第二路（V5 时延优化，P1）。
+ *
+ * 判据（保守，避免误跳导致内容缺失）：
+ *  - 本地结果必须是 success（非 partial / 空文本 / 未过学术闸门）；
+ *  - 剥离前缀后的纯内容必须含学术信号（hasAcademicSignal 为真，等价于必然通过 enforceAcademicSignal）；
+ *  - 且满足以下任一项：
+ *      (1) 已抓全 ≥4 个选项标号（选择题本地已完整，视觉冗余）；
+ *      (2) 含强数学结构符号（∫√∑∏∂∇π∞≤≥≠≈²³¹⁰½¼¾±^，纯公式 / 等式本地 paddle 分支已覆盖）。
+ *  不满足上述任一条件时返回 false → 仍走视觉第二路做交叉核对。
+ */
+export function localIsSufficient(local: OcrResult): boolean {
+  if (local.ocr_status !== 'success') return false;
+  const content = stripOcrPrefixes(local.question ?? '');
+  if (!hasAcademicSignal(content)) return false;
+  // OPTION_RE 无 g 标志（hasAcademicSignal 用 .test 依赖其无状态），此处用全局副本统计全部选项标号
+  const optCount = (content.match(new RegExp(OPTION_RE.source, 'g')) ?? []).length;
+  if (optCount >= 4) return true;
+  if (MATH_STRUCT_RE.test(content)) return true;
+  return false;
+}

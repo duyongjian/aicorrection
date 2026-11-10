@@ -61,9 +61,13 @@ export const MAX_MATHRM = 40;
  * 背景（2026-11-02 实测）：PP-FormulaNet-S 在复杂数学图上会"跑飞"，吐出 `\!` 与 `!`
  * 成百上千次重复（如 `{\begin{array}...\frac{1}{a\ \!{\mathbb{H}}}\ \ !!!...`），既无 strong
  * token、也无 \mathrm 洪流、畸形密度也低，前三条判据全部漏过。正经数学 LaTeX 几乎不出现
- * `!`（仅阶乘 `n!` 与极少量 `\!` 间距），>8 即可判定跑飞。
+ * `!`（仅阶乘 `n!` 与极少量 `\!` 间距），但密集对齐推导会用到若干 `\!`、阶乘连乘会用到若干 `!`。
+ * 为避免误杀合法 LaTeX，将两类分开计数并分别设阈：裸阶乘 `!`（不带前导 `\`）>
+ * MAX_BANGS 才判跑飞；负间距命令 `\!` > MAX_NEGSPACE_BANGS 才判跑飞。两阈值均远低于跑飞量级
+ * （成百上千），又远高于合法用量（≤十余个），处于"合法上限 ~10"与"跑飞下限 ~100"的空隙。
  */
-export const MAX_BANGS = 8;
+export const MAX_BANGS = 20;
+export const MAX_NEGSPACE_BANGS = 25;
 
 /** 数学/LaTeX 结构信号：命中其一才认为"像公式" */
 const MATH_SIGNAL_RE =
@@ -106,6 +110,8 @@ export interface LatexMetrics {
   malformedDensity: number;
   /** 感叹号（`!` 含 `\!` 中的 `!`）总数，用于第四道防线 */
   bangs: number;
+  /** 负间距命令 `\!` 计数，与裸阶乘 `!` 分开计，避免误杀合法 LaTeX */
+  negSpaceBangs: number;
 }
 
 export interface LatexGuardResult {
@@ -125,7 +131,9 @@ function scoreGarbage(latex: string): LatexMetrics {
   const malformed =
     (latex.match(ESC_SPACE_RE) ?? []).length +
     (latex.match(EMPTY_GROUP_RE) ?? []).length;
-  const bangs = (latex.match(/!/g) ?? []).length;
+  // 裸阶乘 !（不带前导反斜杠）；与 \! 负间距命令分开计数，避免误杀合法 LaTeX
+  const bangs = (latex.match(/(?<!\\)!/g) ?? []).length;
+  const negSpaceBangs = (latex.match(/\\!/g) ?? []).length;
   return {
     len: latex.length,
     strong,
@@ -133,6 +141,7 @@ function scoreGarbage(latex: string): LatexMetrics {
     malformed,
     malformedDensity: malformed / Math.max(1, latex.length / 100),
     bangs,
+    negSpaceBangs,
   };
 }
 
@@ -193,8 +202,8 @@ export function validateLatex(
   if (m.mathrm > MAX_MATHRM) {
     return { ok: false, latex, reason: 'mathrm_flood', metrics: m };
   }
-  // 第四道防线：感叹号洪流（前三条判据对 `\!`/`!` 成百上千次重复无效）
-  if (m.bangs > MAX_BANGS) {
+  // 第四道防线：感叹号洪流（裸阶乘 ! > MAX_BANGS 或 负间距 \! > MAX_NEGSPACE_BANGS）
+  if (m.bangs > MAX_BANGS || m.negSpaceBangs > MAX_NEGSPACE_BANGS) {
     return { ok: false, latex, reason: 'exclamation_flood', metrics: m };
   }
   if (isDuplicateOfText(latex, ocrText)) {
