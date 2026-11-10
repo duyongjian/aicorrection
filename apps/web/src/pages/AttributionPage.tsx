@@ -132,10 +132,21 @@ export default function AttributionPage() {
         </Paper>
       )}
 
-      {/* 识别结果：让用户核对 OCR 是否准确 */}
+      {/* 识别结果：让用户核对 OCR 是否准确。
+          视觉模型是否真参与：mergeOcr 在视觉有返回时会拼上「【视觉模型描述(...)】」前缀，
+          据此判断双通道是否真的发生；否则 label 会误导用户以为 MiniCPM-V 已用（实则静默降级）。 */}
+      {(() => {
+        const visionUsed = typeof loop?.question === 'string' && loop.question.includes('【视觉模型描述');
+        return (
       <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
-        <Typography variant="subtitle2" color="text.secondary" sx={{ mb: 1 }}>
-          识别结果（本地OCR + 视觉模型 MiniCPM-V 双通道，可对照核对）
+        <Typography
+          variant="subtitle2"
+          color={visionUsed ? 'text.secondary' : 'warning.main'}
+          sx={{ mb: 1 }}
+        >
+          {visionUsed
+            ? '识别结果（本地OCR + 视觉模型 MiniCPM-V 双通道，可对照核对）'
+            : '识别结果（仅本地OCR · 视觉模型 MiniCPM-V 未参与/不可用，数学符号可能识别不准）'}
         </Typography>
         <Typography variant="body2" sx={{ whiteSpace: 'pre-wrap' }}>
           {loop.question}
@@ -150,6 +161,8 @@ export default function AttributionPage() {
           </Typography>
         )}
       </Paper>
+        );
+      })()}
 
       {status === 'loading' && <AnalyzingState />}
 

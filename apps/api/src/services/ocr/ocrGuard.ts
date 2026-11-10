@@ -122,6 +122,13 @@ export function decideAutoOcrResult(
     return { ocr_status: 'fail', question: '', latex: null };
   }
   if (outcome.kind === 'unavailable') {
+    // 本应走视觉第二路（本地不足 / 数学题需交叉核对）却拿不到视觉证据 → OCR 质量实质降级。
+    // 告警便于排查（典型根因：VISION_BASE_URL 未起 / 502，RECOGNITION_AUTOSTART=false 不自动拉起）。
+    if (hasMathStructure(local.question)) {
+      console.warn(
+        '[ocr] 视觉第二路不可用，已降级为仅本地OCR（数学题符号可能误读）→ 检查 MiniCPM-V(VISION_BASE_URL) 是否在跑。'
+      );
+    }
     return local;
   }
   // ok：拒识判定已在 merge 之前逐源完成（recognizeVisionSafe），此处只做合并。
@@ -157,6 +164,11 @@ export function hasAcademicSignal(text: string): boolean {
   if (OPTION_RE.test(t)) return true;
   if (VAR_CONTEXT_RE.test(t)) return true;
   return false;
+}
+
+/** 文本是否含强数学结构（方程 / 导数 / 积分 / 分式 / 上下标等）。供 OCR 服务在「本应走视觉第二路却不可用」时告警。 */
+export function hasMathStructure(text: string): boolean {
+  return MATH_STRUCT_RE.test(text ?? '');
 }
 
 /**
