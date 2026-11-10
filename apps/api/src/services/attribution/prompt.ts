@@ -40,7 +40,8 @@ export const ATTR_SYSTEM_NOANSWER = `你是一名资深学科讲师，擅长"讲
 - 五段必填且非空；若题干不足以判定唯一答案，在"正确答案"中如实说明并给给定条件下结论。
 - 数学公式一律用 LaTeX：行内 $...$，推导每步 $$...$$ 独占一行；禁用纯文本数学符号（∂ ∫ ∑ − ≥ 等）。
 - 推导须独立自洽、仅基于题干，不引入未给条件；常见陷阱须具体到本题型，严禁空话。
-- 只可基于题干独立推导，严禁臆造；若给参考块，仅对照、不得照抄，无关则忽略。`;
+- 只可基于题干独立推导，严禁臆造；若给参考块，仅对照、不得照抄，无关则忽略。
+- 若题干给出 A/B/C/D 等选项：你必须在"正确答案"中明确写出正确选项字母（如"（D）"）及其结论，并回读"正确推导"末步，确认该结论与推导一致——尤其核对正负号、加减号、分母符号、指数是否抄错；不得臆造题干不存在的选项字母。若推导结论无法对应任一给定选项，如实写"无法对应给定选项"，切勿硬套字母。`;
 
 export const FOLLOWUP_SYSTEM = `[FOLLOWUP_MODE] 你是苏格拉底式追问教练。针对用户对已归因结果的追问，给出一步更深层的补充归因解读（1-3 句），引导用户从"为什么"出发再拆解，而非直接给答案。`;
 
@@ -194,6 +195,38 @@ export function parseTeaching(text: string): ParsedTeaching {
 }
 
 interface FoundField { value: string; index: number; }
+
+/**
+ * 讲解模式答案-选项一致性兜底（质量闸门）。
+ * 题干给出 A/B/C/D 选项时，若"正确答案"指名了某个选项字母（如"（D）""选D""D项"），
+ * 该字母必须真实存在于题干选项中；否则视为答案与选项对不上（模型臆造选项或张冠李戴），
+ * 调用方据此降级为 incomplete，避免把错误答案当确定结论展示。
+ * 题干无选项、或答案未以带上下文的方式指名字母（仅文字结论）→ 视为通过，不误伤。
+ */
+export function teachingAnswerOptionConsistent(
+  correctAnswer: string | undefined,
+  question: string
+): boolean {
+  if (!correctAnswer) return true;
+  const optionLetters = new Set<string>();
+  const qRe = /[\(（]?\s*([A-Ea-e])\s*[\)）]?[\.\、．:：]?\s/g;
+  let m: RegExpExecArray | null;
+  while ((m = qRe.exec(question)) !== null) optionLetters.add(m[1].toUpperCase());
+  if (optionLetters.size === 0) return true; // 题干无选项，跳过校验
+
+  const claimPatterns = [
+    /[\(（]\s*([A-Ea-e])\s*[\)）]/g,
+    /选[择]?\s*([A-Ea-e])\b/g,
+    /选项\s*([A-Ea-e])\b/g,
+    /([A-Ea-e])\s*项\b/g,
+  ];
+  let claimed: string | null = null;
+  for (const re of claimPatterns) {
+    while ((m = re.exec(correctAnswer)) !== null) claimed = m[1].toUpperCase();
+  }
+  if (!claimed) return true; // 答案未指名字母，跳过（仅文字结论）
+  return optionLetters.has(claimed);
+}
 
 function escapeRegExp(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

@@ -188,21 +188,27 @@ export function enforceAcademicSignal(result: OcrResult): OcrResult {
 /**
  * 本地 OCR 是否已充分捕捉题目信号，可确定性跳过视觉第二路（V5 时延优化，P1）。
  *
- * 判据（保守，避免误跳导致内容缺失）：
+ * 判据（保守，避免误跳导致内容缺失 / 误读）：
  *  - 本地结果必须是 success（非 partial / 空文本 / 未过学术闸门）；
  *  - 剥离前缀后的纯内容必须含学术信号（hasAcademicSignal 为真，等价于必然通过 enforceAcademicSignal）；
- *  - 且满足以下任一项：
- *      (1) 已抓全 ≥4 个选项标号（选择题本地已完整，视觉冗余）；
- *      (2) 含强数学结构符号（∫√∑∏∂∇π∞≤≥≠≈²³¹⁰½¼¾±^，纯公式 / 等式本地 paddle 分支已覆盖）。
- *  不满足上述任一条件时返回 false → 仍走视觉第二路做交叉核对。
+ *  - 且满足以下任一条件才允许跳过视觉：
+ *      (1) 已抓全 ≥4 个选项标号，且【不含强数学结构】（纯文本选择题本地已完整，视觉冗余）。
+ *  不满足（尤其含方程 / 导数 / 积分 / 分式等数学结构）时一律返回 false → 仍走视觉第二路交叉核对。
+ *
+ * 关键修复：含强数学结构（∫√∑∏∂∇π∞≤≥≠≈²³¹⁰½¼¾±^）时【绝不】跳过视觉——
+ * 本地文本 OCR 对数学符号（± ∂ ∫ 上下标等）误读率极高，若因「抓全 4 选项」就确定性跳过，
+ * 会导致选项 / 答案与图片对不上（生产已实测：隐函数求导题本地误读符号，模型据此给了错误选项）。
+ * 视觉模型(MiniCPM-V)读算式远准于本地文本 OCR，故数学题强制走交叉核对（牺牲 ~24s 时延换正确）。
  */
 export function localIsSufficient(local: OcrResult): boolean {
   if (local.ocr_status !== 'success') return false;
   const content = stripOcrPrefixes(local.question ?? '');
   if (!hasAcademicSignal(content)) return false;
-  // OPTION_RE 无 g 标志（hasAcademicSignal 用 .test 依赖其无状态），此处用全局副本统计全部选项标号
+  // 含强数学结构 → 强制视觉第二路，不跳过（防止符号误读造成「选项和图对不上」）。
+  if (MATH_STRUCT_RE.test(content)) return false;
+  // OPTION_RE 无 g 标志（hasAcademicSignal 用 .test 依赖其无状态），此处用全局副本统计全部选项标号。
+  // 仅「无数学结构的纯文本选择题」才确定性跳过（本地对纯文字 + 选项标号已充分）。
   const optCount = (content.match(new RegExp(OPTION_RE.source, 'g')) ?? []).length;
   if (optCount >= 4) return true;
-  if (MATH_STRUCT_RE.test(content)) return true;
   return false;
 }

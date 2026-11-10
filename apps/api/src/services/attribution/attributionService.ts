@@ -48,6 +48,7 @@ import {
   buildWebSearchBlock,
   parseAttrTriple,
   parseTeaching,
+  teachingAnswerOptionConsistent,
   type ParsedTeaching,
 } from './prompt';
 import { getKnowledgeReferences } from './references';
@@ -286,6 +287,11 @@ export async function generateAttribution(
   const teaching = parseTeaching(text ?? '');
   if (!teaching.hasCore) {
     // 真实模型缺项 → 诚实降级（Mock 兜底产出的是三行格式，无法补足教学字段）。
+    return { status: 'incomplete' };
+  }
+  // 质量闸门：题干有选项但"正确答案"指名的选项字母不存在于题干 → 答案与选项对不上，
+  // 降级 incomplete（前端据此提示"暂无法确认选项"，而非展示一个可能错误的确定结论）。
+  if (!teachingAnswerOptionConsistent(teaching.correct_answer, input.question)) {
     return { status: 'incomplete' };
   }
 

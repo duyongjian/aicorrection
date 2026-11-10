@@ -322,14 +322,23 @@ test('localIsSufficient：选择题抓全 4 选项 → true', () => {
   );
 });
 
-test('localIsSufficient：纯公式含 ∫ → true', () => {
+test('localIsSufficient：含数学结构（∫）→ false（强制视觉第二路，不跳过）', () => {
   assert.equal(
     localIsSufficient({
       ocr_status: 'success',
       question: '∫₀^∞ e^(−x²) dx = √π/2',
       latex: null,
     }),
-    true
+    false
+  );
+});
+
+test('localIsSufficient：数学选择题（含 ∂ + 4 选项）→ false（不跳过，修复「选项和图对不上」）', () => {
+  const q =
+    '设方程 $x-az=e^{y+az}$ 确定隐函数 $z=z(x,y)$。\n(A) $\\frac{\\partial z}{\\partial x}-\\frac{\\partial z}{\\partial y}=\\frac{1}{a}$\n(B) $\\frac{\\partial z}{\\partial x}+\\frac{\\partial z}{\\partial y}=\\frac{1}{a}$\n(C) $\\frac{\\partial z}{\\partial x}-\\frac{\\partial z}{\\partial y}=-\\frac{1}{a}$\n(D) $\\frac{\\partial z}{\\partial x}+\\frac{\\partial z}{\\partial y}=-\\frac{1}{a}$';
+  assert.equal(
+    localIsSufficient({ ocr_status: 'success', question: q, latex: null }),
+    false
   );
 });
 
