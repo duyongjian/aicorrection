@@ -197,35 +197,117 @@ export function parseTeaching(text: string): ParsedTeaching {
 interface FoundField { value: string; index: number; }
 
 /**
- * 讲解模式答案-选项一致性兜底（质量闸门）。
- * 题干给出 A/B/C/D 选项时，若"正确答案"指名了某个选项字母（如"（D）""选D""D项"），
- * 该字母必须真实存在于题干选项中；否则视为答案与选项对不上（模型臆造选项或张冠李戴），
- * 调用方据此降级为 incomplete，避免把错误答案当确定结论展示。
- * 题干无选项、或答案未以带上下文的方式指名字母（仅文字结论）→ 视为通过，不误伤。
+ * 讲解模式答案-选项一致性校验（质量闸门，强化版）。
+ * 不仅检查"指名的选项字母存在"，还核对"该字母对应选项的公式"是否与模型给出的正确公式一致：
+ *  - 指名字母的公式与模型公式一致 → 通过；
+ *  - 指名字母不一致、但其他某选项公式与模型公式一致 → 模型标错字母，自动纠正为正确字母；
+ *  - 指名字母本身不在题干选项中、且公式也不命中任一选项 → 答案与选项对不上，降级 incomplete；
+ *  - 题干无选项 / 答案未指名字母 / 公式归一化后无冲突但亦无命中 → 放行（避免符号记法漂移误杀）。
  */
-export function teachingAnswerOptionConsistent(
+export interface AnswerLetterCheck {
+  /** false → 调用方应降级为 incomplete（答案无法与选项对齐）。 */
+  ok: boolean;
+  /** 若模型标错了字母但公式命中了别的选项，返回修正后的"正确答案"文本。 */
+  correctedText?: string;
+}
+
+/** 题干选项解析：抽取 (A)...(B)... 标号与选项体（含公式）。 */
+interface ParsedOption {
+  letter: string;
+  body: string;
+}
+function parseOptions(question: string): ParsedOption[] {
+  const markerRe = /[\(（]\s*([A-Ea-e])\s*[\)）]/g;
+  const markers: { letter: string; idx: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = markerRe.exec(question)) !== null) {
+    markers.push({ letter: m[1].toUpperCase(), idx: m.index });
+  }
+  if (markers.length === 0) return [];
+  const opts: ParsedOption[] = [];
+  for (let i = 0; i < markers.length; i++) {
+    const start = markers[i].idx;
+    const end = i + 1 < markers.length ? markers[i + 1].idx : question.length;
+    opts.push({ letter: markers[i].letter, body: question.slice(start, end).trim() });
+  }
+  return opts;
+}
+
+/** 公式归一化：去空白、统一减号/括号、去 LaTeX 装饰，便于结构化比对。 */
+function normalizeFormula(f: string): string {
+  return (f ?? '')
+    .replace(/\s+/g, '')
+    .replace(/[−–—]/g, '-') // 各种 dash → ASCII 减号
+    .replace(/[＼\\]/g, '') // 去掉反斜杠
+    .replace(/[{}]/g, '') // 去 LaTeX 花括号
+    .replace(/\\?frac\{([^}]*)\}\{([^}]*)\}/g, '($1)/($2)') // \frac{a}{b} → (a)/(b)
+    .replace(/\$/g, '')
+    .replace(/（/g, '(')
+    .replace(/）/g, ')')
+    .toLowerCase();
+}
+
+/** 从"正确答案"段抽取公式：去掉开头字母标记，取标记后整段（截掉末尾解释性文字）。 */
+function extractFormula(text: string): string {
+  let s = (text ?? '')
+    .replace(/^[\(（]\s*[A-Ea-e]\s*[\)）]\s*[:：]?/, '')
+    .replace(/^选项?[A-Ea-e]\s*[:：]?/i, '')
+    .trim();
+  // 截掉末尾可能的解释性文字（句号 / 中文或英文括号之后不再属于公式本体）
+  const cut = s.search(/[。.（(]/);
+  if (cut > 0) s = s.slice(0, cut);
+  return normalizeFormula(s);
+}
+
+/** 抽取"正确答案"段里指名的选项字母。 */
+function extractClaimedLetter(text: string): string | null {
+  const claimRe =
+    /[\(（]\s*([A-Ea-e])\s*[\)）]|选[择]?\s*([A-Ea-e])\b|选项\s*([A-Ea-e])\b|([A-Ea-e])\s*项\b/g;
+  let m: RegExpExecArray | null;
+  let claimed: string | null = null;
+  while ((m = claimRe.exec(text)) !== null) {
+    claimed = (m[1] || m[2] || m[3] || m[4]).toUpperCase();
+  }
+  return claimed;
+}
+
+export function verifyAnswerLetter(
   correctAnswer: string | undefined,
   question: string
-): boolean {
-  if (!correctAnswer) return true;
-  const optionLetters = new Set<string>();
-  const qRe = /[\(（]?\s*([A-Ea-e])\s*[\)）]?[\.\、．:：]?\s/g;
-  let m: RegExpExecArray | null;
-  while ((m = qRe.exec(question)) !== null) optionLetters.add(m[1].toUpperCase());
-  if (optionLetters.size === 0) return true; // 题干无选项，跳过校验
+): AnswerLetterCheck {
+  if (!correctAnswer) return { ok: true };
+  const opts = parseOptions(question);
+  if (opts.length === 0) return { ok: true }; // 题干无选项，跳过校验
 
-  const claimPatterns = [
-    /[\(（]\s*([A-Ea-e])\s*[\)）]/g,
-    /选[择]?\s*([A-Ea-e])\b/g,
-    /选项\s*([A-Ea-e])\b/g,
-    /([A-Ea-e])\s*项\b/g,
-  ];
-  let claimed: string | null = null;
-  for (const re of claimPatterns) {
-    while ((m = re.exec(correctAnswer)) !== null) claimed = m[1].toUpperCase();
+  const claimed = extractClaimedLetter(correctAnswer);
+  if (!claimed) return { ok: true }; // 答案未指名字母，放行
+
+  const answerFormula = extractFormula(correctAnswer);
+  if (!answerFormula) return { ok: true };
+
+  const stripMarker = (body: string) => body.replace(/^[\(（]\s*[A-Ea-e]\s*[\)）]\s*/, '');
+  const claimedOpt = opts.find((o) => o.letter === claimed);
+  const claimedNorm = claimedOpt ? normalizeFormula(stripMarker(claimedOpt.body)) : '';
+
+  // 1) 指名字母自身公式一致 → 通过
+  if (claimedNorm && claimedNorm === answerFormula) return { ok: true };
+
+  // 2) 在其他选项中找公式命中的字母 → 模型标错字母，自动纠正
+  const hit = opts.find(
+    (o) => o.letter !== claimed && normalizeFormula(stripMarker(o.body)) === answerFormula
+  );
+  if (hit) {
+    const correctedText = correctAnswer.replace(
+      new RegExp(`([\\(（]\\s*)${claimed}(\\s*[\\)）])`, 'g'),
+      `$1${hit.letter}$2`
+    );
+    return { ok: true, correctedText };
   }
-  if (!claimed) return true; // 答案未指名字母，跳过（仅文字结论）
-  return optionLetters.has(claimed);
+
+  // 3) 指名字母本身不在题干选项中、且公式也无命中 → 臆造/对不上，降级
+  if (!claimedOpt) return { ok: false };
+  // 4) 指名字母在选项中但公式无命中、也无其他命中 → 放行（记法漂移保护，不误杀）
+  return { ok: true };
 }
 
 function escapeRegExp(s: string): string {

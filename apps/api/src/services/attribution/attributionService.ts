@@ -48,7 +48,7 @@ import {
   buildWebSearchBlock,
   parseAttrTriple,
   parseTeaching,
-  teachingAnswerOptionConsistent,
+  verifyAnswerLetter,
   type ParsedTeaching,
 } from './prompt';
 import { getKnowledgeReferences } from './references';
@@ -289,10 +289,15 @@ export async function generateAttribution(
     // 真实模型缺项 → 诚实降级（Mock 兜底产出的是三行格式，无法补足教学字段）。
     return { status: 'incomplete' };
   }
-  // 质量闸门：题干有选项但"正确答案"指名的选项字母不存在于题干 → 答案与选项对不上，
-  // 降级 incomplete（前端据此提示"暂无法确认选项"，而非展示一个可能错误的确定结论）。
-  if (!teachingAnswerOptionConsistent(teaching.correct_answer, input.question)) {
+  // 质量闸门（强化版）：比对"正确答案"指名字母对应公式与模型给出公式是否一致。
+  //  - 字母不存在于题干 → 降级 incomplete（诚实提示"暂无法确认选项"）。
+  //  - 字母存在但公式命中了别的选项 → 自动纠正字母（模型标错字母，如 (D)→(A)）。
+  const letterCheck = verifyAnswerLetter(teaching.correct_answer, input.question);
+  if (!letterCheck.ok) {
     return { status: 'incomplete' };
+  }
+  if (letterCheck.correctedText) {
+    teaching.correct_answer = letterCheck.correctedText; // 原地修正标错的选项字母
   }
 
   const attributionId = generateAttributionId();
