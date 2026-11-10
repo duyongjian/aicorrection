@@ -42,13 +42,13 @@ export default function UploadPage() {
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  /** 本地照片预览加载失败兜底。 */
-  const [previewError, setPreviewError] = useState(false);
   /** 从草稿恢复时若草稿含图片名（但图片本身不落草稿），提示用户重新选择。 */
   const [draftImageHint, setDraftImageHint] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const previewUrlRef = useRef<string | null>(null);
-  /** HEIC/HEIF 等浏览器无法解码预览、但仍可提交识别的格式提示。 */
+  /** 防止异步预解码结果错位：每次选图自增序号，过期的检测丢弃。 */
+  const fileSeqRef = useRef(0);
+  /** 图片无法在浏览器预览（HEIC/不支持格式/损坏）时的温和提示，文件仍保留可提交。 */
   const [heicNote, setHeicNote] = useState(false);
 
   useEffect(() => {
@@ -83,12 +83,13 @@ export default function UploadPage() {
     resetInput();
   };
 
-  /** 选图/拍照后的校验 + 预览生成：在事件处理中创建 object URL，
-   *  避免 React.StrictMode 开发态下 effect 双调用导致 URL 被提前 revoke 而闪烁。 */
-  const onFileChange = (e: ChangeEvent<HTMLInputElement>): void => {
+  /** 选图/拍照后的校验 + 预览生成。
+   *  用 createImageBitmap 真解码探测：能解码才渲染预览；不能解码（HEIC / 不支持格式 /
+   *  损坏文件，含扩展名/MIME 被伪装的 iPhone 实拍图）则温和提示「可继续提交」，
+   *  彻底避免「照片预览加载失败，请重新选择或拍摄」这类阻断性报错。 */
+  const onFileChange = async (e: ChangeEvent<HTMLInputElement>): Promise<void> => {
     const f = e.target.files?.[0] ?? null;
     setDraftImageHint(null);
-    setPreviewError(false);
     setHeicNote(false);
     if (previewUrlRef.current) {
       URL.revokeObjectURL(previewUrlRef.current);
@@ -101,19 +102,35 @@ export default function UploadPage() {
     }
     const type = (f.type || '').toLowerCase();
     const name = (f.name || '').toLowerCase();
-    const isHeic = /\.(heic|heif)$/.test(name) || /heic|heif/.test(type);
+    const looksImage =
+      type.startsWith('image/') ||
+      /\.(heic|heif)$/.test(name) ||
+      /heic|heif/.test(type);
     // accept="image/*" 仅为建议，浏览器不强制拦截，这里显式校验文件类型
-    if (!type.startsWith('image/') && !isHeic) {
+    if (!looksImage) {
       setError('请选择图片文件（jpg / png / webp 等）');
       setFile(null);
       setPreviewUrl(null);
       return;
     }
     setFile(f);
-    setHeicNote(isHeic);
-    const url = URL.createObjectURL(f);
-    previewUrlRef.current = url;
-    setPreviewUrl(url);
+    const seq = ++fileSeqRef.current;
+    try {
+      // 真解码探测：浏览器解码不了会抛错，此时不强渲染、改温和提示
+      if (typeof createImageBitmap === 'function') {
+        const bmp = await createImageBitmap(f);
+        bmp.close();
+      }
+      if (seq !== fileSeqRef.current) return; // 用户已重新选择，丢弃过期结果
+      const url = URL.createObjectURL(f);
+      previewUrlRef.current = url;
+      setPreviewUrl(url);
+    } catch {
+      if (seq !== fileSeqRef.current) return;
+      // 预览不可用，但文件仍保留、可正常提交（后端 OCR 会给出识别结果或失败提示）
+      setHeicNote(true);
+      setPreviewUrl(null);
+    }
   };
 
   const submit = async (): Promise<void> => {
@@ -215,13 +232,13 @@ export default function UploadPage() {
                 <Box>
                   {heicNote ? (
                     <Alert severity="info" sx={{ mb: 1 }}>
-                      已选择 HEIC/HEIF 原图，当前浏览器无法直接预览，但可正常提交与识别。
+                      该图片当前浏览器无法直接预览，但可正常提交；若后端识别失败，可在结果页改用文本入口补充题目。
                     </Alert>
-                  ) : previewUrl && !previewError ? (
+                  ) : previewUrl ? (
                     <img
                       src={previewUrl}
                       alt="照片预览"
-                      onError={() => setPreviewError(true)}
+                      onError={() => setHeicNote(true)}
                       style={{
                         maxWidth: '100%',
                         maxHeight: 240,
@@ -231,10 +248,6 @@ export default function UploadPage() {
                         marginBottom: 8,
                       }}
                     />
-                  ) : previewError ? (
-                    <Alert severity="warning" sx={{ mb: 1 }}>
-                      照片预览加载失败，请重新选择或拍摄
-                    </Alert>
                   ) : null}
                   <Typography variant="body2" color="text.secondary">
                     {file.name}（{formatFileSize(file.size)}）
