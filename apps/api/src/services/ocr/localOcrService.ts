@@ -14,8 +14,22 @@
  */
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { env } from '../../config/env';
 import { TIMEOUT } from '../../config/timeout';
+
+// serve 子进程 stderr 落盘（此前被整段吞掉，导致崩溃无迹可寻）。
+// 固定路径便于复现/排障；仅追加写入，单文件。
+const SERVE_STDERR_LOG = path.join(os.tmpdir(), 'aicorrection-ocr-serve-stderr.log');
+function ensureStderrLog() {
+  try {
+    if (!fs.existsSync(SERVE_STDERR_LOG)) fs.writeFileSync(SERVE_STDERR_LOG, '');
+  } catch {
+    /* 忽略：日志不可用不应影响主流程 */
+  }
+  return SERVE_STDERR_LOG;
+}
 
 export type LocalOcrEngine = 'rapid' | 'paddle' | 'tesseract';
 
@@ -146,8 +160,19 @@ function getServeProcess(): Promise<ChildProcessWithoutNullStreams> {
     };
 
     child.stdout.on('data', onData);
-    child.stderr.on('data', () => {
-      /* 忽略 Paddle / Rapid 噪声输出 */
+    // serve 崩溃/噪声落盘（此前整段被吞，导致崩溃无法诊断）。
+    // 每个事件前缀 pid，便于把 stderr 与具体 serve 实例关联。
+    const stderrLog = ensureStderrLog();
+    const pidTag = `[serve pid=${child.pid}] `;
+    child.stderr.on('data', (d: Buffer) => {
+      try {
+        const text = d.toString('utf8');
+        for (const line of text.split(/\r?\n/)) {
+          if (line.trim()) fs.appendFileSync(stderrLog, pidTag + line + '\n');
+        }
+      } catch {
+        /* 忽略日志写入失败 */
+      }
     });
     child.on('error', (e: Error) => {
       if (!settled) {
@@ -366,10 +391,12 @@ export function runLocalOcr(
   }
 
   if (OCR_PERSISTENT) {
-    return runLocalOcrServe(imagePath, opts).catch((serveErr) => {
-      // serve 失败透明回退 one-shot（不抛 500；降级由上层 ocrService 决定）
-      return runLocalOcrOneShot(imagePath, opts);
-    });
+    // serve 失败：先重启 serve 重试一次（超时/退出已 killServeProcess，下次
+    // getServeProcess 会重新 spawn 并复用模型热态，避免直接跌回 16-18s 的 one-shot 地板）；
+    // 仍失败才透明回退 one-shot（绝不抛 500，降级由上层 ocrService 决定）。
+    return runLocalOcrServe(imagePath, opts)
+      .catch(() => runLocalOcrServe(imagePath, opts))
+      .catch((serveErr) => runLocalOcrOneShot(imagePath, opts));
   }
   return runLocalOcrOneShot(imagePath, opts);
 }
