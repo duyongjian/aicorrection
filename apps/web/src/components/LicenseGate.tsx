@@ -20,6 +20,7 @@ import { api, describeError } from '../api/client';
 import AppShell from './AppShell';
 import AccountPanel from './AccountPanel';
 import { LicensePlanProvider } from '../context/LicensePlanContext';
+import { useLoopStore } from '../store/loopStore';
 
 const LICENSE_LOST_EVENT = 'aicorrection:license-lost';
 const AUTH_LOST_EVENT = 'aicorrection:auth-lost';
@@ -107,6 +108,28 @@ export default function LicenseGate({ children }: { children: ReactNode }) {
   useEffect(() => {
     void checkStatus();
   }, [checkStatus]);
+
+  // 桥接：将已解析出的身份同步进全局 loopStore，使强化页（诊断/强化/复习/知识/账户）
+  // 无需等待用户上传即可拿到 anonUserId；若 active 但尚无账号（如 dev 门禁关闭、无激活凭证），
+  // 则惰性建匿名账户，避免页面永久显示「正在读取身份，请稍候…」。
+  useEffect(() => {
+    if (phase !== 'active') return;
+    const sync = async (): Promise<void> => {
+      const store = useLoopStore.getState();
+      if (store.anonUserId) return;
+      if (identity?.anonUserId) {
+        store.setAnonUser(identity.anonUserId, identity.segment);
+        return;
+      }
+      try {
+        const acc = await api.createAccount({ segment: 'kaoyan' });
+        useLoopStore.getState().setAnonUser(acc.anon_user_id, 'kaoyan');
+      } catch {
+        /* 离线：保持 null，页面仍显示请稍候（已有兜底），不阻塞主流程 */
+      }
+    };
+    void sync();
+  }, [phase, identity]);
 
   useEffect(() => {
     const onLost = () => {

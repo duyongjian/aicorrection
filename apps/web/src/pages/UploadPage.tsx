@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Alert,
@@ -47,6 +47,9 @@ export default function UploadPage() {
   /** 从草稿恢复时若草稿含图片名（但图片本身不落草稿），提示用户重新选择。 */
   const [draftImageHint, setDraftImageHint] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const previewUrlRef = useRef<string | null>(null);
+  /** HEIC/HEIF 等浏览器无法解码预览、但仍可提交识别的格式提示。 */
+  const [heicNote, setHeicNote] = useState(false);
 
   useEffect(() => {
     void loadDrafts();
@@ -54,19 +57,15 @@ export default function UploadPage() {
     tracker.screenView('upload');
   }, [loadDrafts]);
 
-  // 为选中的文件生成预览 URL，并在变化/卸载时释放，避免内存泄漏
+  // 卸载时释放尚未撤销的预览 URL，避免内存泄漏
   useEffect(() => {
-    setPreviewError(false);
-    if (!file) {
-      setPreviewUrl(null);
-      return;
-    }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
     return () => {
-      URL.revokeObjectURL(url);
+      if (previewUrlRef.current) {
+        URL.revokeObjectURL(previewUrlRef.current);
+        previewUrlRef.current = null;
+      }
     };
-  }, [file]);
+  }, []);
 
   /** 清空 input 的 value，否则再次选择同一文件不会触发 onChange。 */
   const resetInput = (): void => {
@@ -74,8 +73,47 @@ export default function UploadPage() {
   };
 
   const removePhoto = (): void => {
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
     setFile(null);
+    setPreviewUrl(null);
+    setHeicNote(false);
     resetInput();
+  };
+
+  /** 选图/拍照后的校验 + 预览生成：在事件处理中创建 object URL，
+   *  避免 React.StrictMode 开发态下 effect 双调用导致 URL 被提前 revoke 而闪烁。 */
+  const onFileChange = (e: ChangeEvent<HTMLInputElement>): void => {
+    const f = e.target.files?.[0] ?? null;
+    setDraftImageHint(null);
+    setPreviewError(false);
+    setHeicNote(false);
+    if (previewUrlRef.current) {
+      URL.revokeObjectURL(previewUrlRef.current);
+      previewUrlRef.current = null;
+    }
+    if (!f) {
+      setFile(null);
+      setPreviewUrl(null);
+      return;
+    }
+    const type = (f.type || '').toLowerCase();
+    const name = (f.name || '').toLowerCase();
+    const isHeic = /\.(heic|heif)$/.test(name) || /heic|heif/.test(type);
+    // accept="image/*" 仅为建议，浏览器不强制拦截，这里显式校验文件类型
+    if (!type.startsWith('image/') && !isHeic) {
+      setError('请选择图片文件（jpg / png / webp 等）');
+      setFile(null);
+      setPreviewUrl(null);
+      return;
+    }
+    setFile(f);
+    setHeicNote(isHeic);
+    const url = URL.createObjectURL(f);
+    previewUrlRef.current = url;
+    setPreviewUrl(url);
   };
 
   const submit = async (): Promise<void> => {
@@ -164,10 +202,7 @@ export default function UploadPage() {
                 accept="image/*"
                 capture="environment"
                 type="file"
-                onChange={(e) => {
-                  setFile(e.target.files?.[0] ?? null);
-                  setDraftImageHint(null);
-                }}
+                onChange={onFileChange}
               />
               <Button
                 variant="outlined"
@@ -178,7 +213,11 @@ export default function UploadPage() {
 
               {file && (
                 <Box>
-                  {previewUrl && !previewError && (
+                  {heicNote ? (
+                    <Alert severity="info" sx={{ mb: 1 }}>
+                      已选择 HEIC/HEIF 原图，当前浏览器无法直接预览，但可正常提交与识别。
+                    </Alert>
+                  ) : previewUrl && !previewError ? (
                     <img
                       src={previewUrl}
                       alt="照片预览"
@@ -192,12 +231,11 @@ export default function UploadPage() {
                         marginBottom: 8,
                       }}
                     />
-                  )}
-                  {previewError && (
+                  ) : previewError ? (
                     <Alert severity="warning" sx={{ mb: 1 }}>
                       照片预览加载失败，请重新选择或拍摄
                     </Alert>
-                  )}
+                  ) : null}
                   <Typography variant="body2" color="text.secondary">
                     {file.name}（{formatFileSize(file.size)}）
                   </Typography>
