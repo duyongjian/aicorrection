@@ -147,8 +147,12 @@ export class OllamaProvider implements LlmProvider {
 type RawMsg = { content?: string | null; reasoning_content?: string | null };
 function extractContent(msg: RawMsg | undefined): string {
   if (!msg) return '';
-  const c = typeof msg.content === 'string' ? msg.content : '';
+  // 防御性清理：推理模型（DeepSeek-R1-Distill 等）偶发把思考链以裸 <think>…</think>
+  // 直接塞进 content（部分 llama.cpp / Ollama 配置），会在结尾结论前引入大量噪音、
+  // 可能污染"最后一个字段标记"回溯锚点。剥掉思考块，只留结尾结论。
+  const stripThink = (s: string) => s.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+  const c = typeof msg.content === 'string' ? stripThink(msg.content) : '';
   if (c.trim()) return c;
-  const r = typeof msg.reasoning_content === 'string' ? msg.reasoning_content : '';
+  const r = typeof msg.reasoning_content === 'string' ? stripThink(msg.reasoning_content) : '';
   return r;
 }
