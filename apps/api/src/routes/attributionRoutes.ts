@@ -43,13 +43,20 @@ const schema = z.object({
   user_answer: z.string().optional(),
   // 学科标签：透传给归因服务，用于知识锚点（如英文分词题）的语境门控。
   subject: z.string().optional(),
+  // 联网搜索：默认不传（关闭）；前端开关显式开启时传 true，逐次确认外发脱敏题干。
+  web_search: z.boolean().optional(),
 });
 
 router.post('/', validateBody(schema), async (req, res, next) => {
   try {
     const data = await generateAttribution({
-      ...req.body,
+      loop_id: req.body.loop_id,
+      anon_user_id: req.body.anon_user_id,
+      question: req.body.question,
+      user_answer: req.body.user_answer,
+      subject: req.body.subject,
       is_internal: req.is_internal ?? false,
+      enableWebSearch: req.body.web_search ?? false,
     });
     res.json(ok(data));
   } catch (e) {

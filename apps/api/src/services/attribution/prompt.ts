@@ -212,7 +212,7 @@ export interface AnswerLetterCheck {
 }
 
 /** 题干选项解析：抽取 (A)...(B)... 标号与选项体（含公式）。 */
-interface ParsedOption {
+export interface ParsedOption {
   letter: string;
   body: string;
 }
@@ -260,7 +260,7 @@ function extractFormula(text: string): string {
 }
 
 /** 抽取"正确答案"段里指名的选项字母。 */
-function extractClaimedLetter(text: string): string | null {
+export function extractClaimedLetter(text: string): string | null {
   const claimRe =
     /[\(（]\s*([A-Ea-e])\s*[\)）]|选[择]?\s*([A-Ea-e])\b|选项\s*([A-Ea-e])\b|([A-Ea-e])\s*项\b/g;
   let m: RegExpExecArray | null;

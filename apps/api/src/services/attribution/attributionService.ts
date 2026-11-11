@@ -49,8 +49,10 @@ import {
   parseAttrTriple,
   parseTeaching,
   verifyAnswerLetter,
+  extractClaimedLetter,
   type ParsedTeaching,
 } from './prompt';
+import { verifyImplicitDifferentiation } from './mathVerify';
 import { getKnowledgeReferences } from './references';
 import { retrieveReferences } from '../rag/ragService';
 import { retrieveWebSearch } from '../websearch/webSearchService';
@@ -63,6 +65,8 @@ export interface AttrInput {
   subject?: string;
   mistake_id?: string | null;
   is_internal?: boolean;
+  /** 用户显式开启联网搜索（前端开关逐次确认）。 */
+  enableWebSearch?: boolean;
 }
 
 export async function generateAttribution(
@@ -122,15 +126,16 @@ export async function generateAttribution(
   // 见 docs/P0-数据主权默认外发修复.md）；仅在数据主体显式逐次确认后开启。
   // 脱敏 ≠ 授权；失败/超时/关闭→不注入，归因照常进行。
   // 检索词优先用 RAG 知识点，无命中则退回脱敏题干。
+  // enableWebSearch：用户在前端开关逐次开启时才允许突破默认关闭闸门。
   const webPromise = withTimeout(
     retrieveWebSearch(input.question, {
       subject: input.subject,
       userAnswer: input.user_answer,
       knowledgePoint: topKp,
+      enabled: input.enableWebSearch,
     }),
     env.WEB_SEARCH_TIMEOUT_MS
   ).catch(() => null);
-  // 等联网搜索结果返回（P2，仅用于拼 user 消息）
   const webResult = await webPromise;
   const webBlock = webResult ? buildWebSearchBlock(webResult) : '';
   const userContent = attrUserPrompt(
@@ -298,6 +303,21 @@ export async function generateAttribution(
   }
   if (letterCheck.correctedText) {
     teaching.correct_answer = letterCheck.correctedText; // 原地修正标错的选项字母
+  }
+
+  // 符号/数值独立校验（治本，模型无关）：在隐函数曲面上数值验证 A~D 哪个选项恒成立。
+  // 与模型结论不一致时，以数值校验为准覆盖"正确答案"（字母+公式双保险）。
+  // 仅对隐函数求导类题生效；其余题返回 unknown 不干预。
+  const mv = verifyImplicitDifferentiation(input.question);
+  if (mv.kind === 'verified' && mv.correctLetter && mv.correctOptionText) {
+    const claimed = extractClaimedLetter(teaching.correct_answer ?? '');
+    if (!claimed || claimed !== mv.correctLetter) {
+      console.warn(
+        `[mathVerify] 模型答案(${claimed ?? '无'}) 与独立数值校验(${mv.correctLetter}) 不一致，` +
+          `已覆盖为 ${mv.correctLetter}；残差=${JSON.stringify(mv.residuals)}`
+      );
+      teaching.correct_answer = mv.correctOptionText;
+    }
   }
 
   const attributionId = generateAttributionId();

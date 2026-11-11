@@ -189,18 +189,20 @@ export function useLoop() {
     [ensureAccount, sessionId, setLoop, setLoading, setError]
   );
 
-  const runAttribution = useCallback(async (): Promise<AttributionData> => {
-    const l = useLoopStore.getState().loop;
-    const uid = useLoopStore.getState().anonUserId;
-    if (!l || !uid) throw new Error('no loop');
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await api.getAttribution({
-        loop_id: l.loop_id,
-        anon_user_id: uid,
-        question: l.question,
-      });
+  const runAttribution = useCallback(
+    async (opts?: { webSearch?: boolean }): Promise<AttributionData> => {
+      const l = useLoopStore.getState().loop;
+      const uid = useLoopStore.getState().anonUserId;
+      if (!l || !uid) throw new Error('no loop');
+      setLoading(true);
+      setError(null);
+      try {
+        const data = await api.getAttribution({
+          loop_id: l.loop_id,
+          anon_user_id: uid,
+          question: l.question,
+          web_search: opts?.webSearch ?? false,
+        });
       if (data.status === 'ok') {
         setAttribution(data);
         tracker.loopAttrShow(

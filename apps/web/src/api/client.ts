@@ -398,7 +398,9 @@ export const api = {
     return http.post('/upload', formData).then((r) => r.data.data);
   },
 
-  getAttribution(req: AttributionRequest): Promise<AttributionData> {
+  getAttribution(
+    req: AttributionRequest & { web_search?: boolean }
+  ): Promise<AttributionData> {
     return http.post('/attribution', req).then((r) => r.data.data);
   },
 

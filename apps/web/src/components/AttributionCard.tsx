@@ -3,9 +3,13 @@ import {
   CardContent,
   CardHeader,
   Chip,
+  Divider,
   Grid,
+  Link,
+  Box,
+  Typography,
 } from '@mui/material';
-import type { AttributionOkData } from '@aicorrection/shared';
+import type { AttributionOkData, AttributionWebSearch } from '@aicorrection/shared';
 import MathText from './MathText';
 
 /** 三栏归因卡片：错因 / 知识点 / 本质一句话；无作答时额外展示"本题讲解"三栏 */
@@ -51,6 +55,35 @@ export default function AttributionCard({
           </Card>
         </Grid>
       ))}
+
+      {/* 联网搜索参考块（P2）：仅当用户显式开启且命中时填充；仅供参考，须独立验证。 */}
+      {attr.webSearch && attr.webSearch.status === 'ok' && attr.webSearch.items.length > 0 && (
+        <Grid item xs={12}>
+          <Divider sx={{ my: 1 }}>
+            网络依据（仅供参考，须独立验证）
+          </Divider>
+          <Card variant="outlined" sx={{ borderColor: 'warning.main' }}>
+            <CardHeader
+              title="联网搜索参考"
+              titleTypographyProps={{ variant: 'subtitle2' }}
+            />
+            <CardContent>
+              {attr.webSearch.items.map((it, i) => (
+                <Box key={i} sx={{ mb: 1 }}>
+                  <Link href={it.url} target="_blank" rel="noreferrer">
+                    {it.title}
+                  </Link>
+                  {it.snippet && (
+                    <Typography variant="body2" color="text.secondary">
+                      {it.snippet}
+                    </Typography>
+                  )}
+                </Box>
+              ))}
+            </CardContent>
+          </Card>
+        </Grid>
+      )}
     </Grid>
   );
 }

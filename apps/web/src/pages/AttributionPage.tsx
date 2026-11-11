@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Alert, Box, Button, Paper, Stack, Typography } from '@mui/material';
+import { Alert, Box, Button, FormControlLabel, Paper, Stack, Switch, Typography } from '@mui/material';
 import { useLoop } from '../hooks/useLoop';
 import AttributionCard from '../components/AttributionCard';
 import RateActions from '../components/RateActions';
@@ -25,6 +25,8 @@ export default function AttributionPage() {
   const [showFollowup, setShowFollowup] = useState(false);
   const [rated, setRated] = useState(false);
   const [imageError, setImageError] = useState(false);
+  /** 联网搜索开关：默认关闭（数据主权红线），用户主动开启才外发脱敏题干作对照参考。 */
+  const [webSearch, setWebSearch] = useState(false);
 
   /** 重新归因：保留已上传的 loop，仅重跑分析模型（不丢失原图/题干）。 */
   const handleRetry = useCallback(() => {
@@ -163,6 +165,33 @@ export default function AttributionPage() {
       </Paper>
         );
       })()}
+
+      {/* 联网搜索开关：默认关闭（数据主权红线）。开启后本次归因会外发脱敏题干到第三方检索，
+          结果作为"网络依据"对照参考；关闭时绝不外发任何内容。 */}
+      <Paper variant="outlined" sx={{ p: 2, mb: 2 }}>
+        <FormControlLabel
+          control={
+            <Switch
+              checked={webSearch}
+              onChange={(e) => {
+                const v = e.target.checked;
+                setWebSearch(v);
+                if (status !== 'loading') {
+                  setStatus('loading');
+                  runAttribution({ webSearch: v })
+                    .then((d) => {
+                      if (d.status === 'ok') setStatus('ok');
+                      else if (d.status === 'analyzing') setStatus('analyzing');
+                      else setStatus('incomplete');
+                    })
+                    .catch(() => setStatus('error'));
+                }
+              }}
+            />
+          }
+          label="联网搜索（默认关闭；开启将外发脱敏题干作对照参考）"
+        />
+      </Paper>
 
       {status === 'loading' && <AnalyzingState />}
 

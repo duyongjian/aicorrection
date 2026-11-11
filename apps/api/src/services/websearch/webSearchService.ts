@@ -44,6 +44,11 @@ export interface RetrieveWebSearchOptions {
   knowledgePoint?: string;
   maxResults?: number;
   timeoutMs?: number;
+  /**
+   * 用户逐次显式开启联网搜索（前端开关）。仅当 true 时才允许突破 WEB_SEARCH_ENABLED
+   * 默认关闭这一数据主权闸门（默认关闭、需用户主动打开）。
+   */
+  enabled?: boolean;
 }
 
 /** 带超时的 fetch（AbortController 中断挂起的请求，避免拖垮归因）。 */
@@ -95,9 +100,13 @@ export async function retrieveWebSearch(
   question: string,
   opts: RetrieveWebSearchOptions = {}
 ): Promise<AttributionWebSearch> {
-  // 关闭开关：直接空（不触达网络），归因流程零影响。
-  if (!env.WEB_SEARCH_ENABLED) {
+  // 数据主权闸门：默认（WEB_SEARCH_ENABLED=false）绝不外发；仅当用户在前端显式开启
+  // （opts.enabled=true，逐次确认）时才允许触达网络。两者皆关 → 直接空，归因流程零影响。
+  if (!env.WEB_SEARCH_ENABLED && !opts.enabled) {
     return { status: 'empty', source: 'web', items: [] };
+  }
+  if (opts.enabled) {
+    console.warn('[webSearch] 用户显式开启联网搜索，本次将外发脱敏题干至第三方检索服务');
   }
 
   // 脱敏：优先用知识点（来自 RAG 命中），否则题干；外发内容绝不含学生作答 / PII。
