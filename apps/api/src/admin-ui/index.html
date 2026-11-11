@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AICorrection 管理后台</title>
+<style>
+  :root {
+    --bg: #f5f6f8; --card: #ffffff; --ink: #1f2430; --muted: #6b7280;
+    --line: #e3e6ec; --accent: #2f6df0; --accent-d: #1f54c4; --ok: #138a3e;
+    --warn: #b25e00; --danger: #c0392b; --code-bg: #f1f3f7;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: var(--bg); color: var(--ink); }
+  header { background: var(--card); border-bottom: 1px solid var(--line); padding: 12px 20px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap; position: sticky; top: 0; z-index: 5; }
+  header h1 { font-size: 16px; margin: 0; }
+  .conn { display: flex; gap: 8px; align-items: center; margin-left: auto; flex-wrap: wrap; }
+  .conn input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; font-size: 13px; }
+  .conn input.key { width: 220px; }
+  .conn input.base { width: 130px; }
+  nav { display: flex; gap: 4px; padding: 10px 20px 0; background: var(--card); border-bottom: 1px solid var(--line); }
+  nav button { border: 1px solid transparent; background: none; padding: 8px 16px; cursor: pointer;
+    font-size: 14px; color: var(--muted); border-bottom: 2px solid transparent; }
+  nav button.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  main { padding: 20px; max-width: 1100px; margin: 0 auto; }
+  .tab { display: none; } .tab.active { display: block; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+  .card h2 { margin: 0 0 12px; font-size: 15px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 4px; }
+  input, textarea, select { width: 100%; padding: 7px 9px; border: 1px solid var(--line);
+    border-radius: 6px; font: inherit; background: #fff; color: var(--ink); }
+  textarea { min-height: 80px; resize: vertical; font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 12px; }
+  button.btn { background: var(--accent); color: #fff; border: none; padding: 8px 14px; border-radius: 6px;
+    cursor: pointer; font-size: 13px; }
+  button.btn:hover { background: var(--accent-d); }
+  button.ghost { background: #fff; color: var(--ink); border: 1px solid var(--line); }
+  button.danger { background: #fff; color: var(--danger); border: 1px solid var(--danger); }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; background: #fafbfc; }
+  .pill { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; }
+  .pill.ok { background: #e6f4ea; color: var(--ok); }
+  .pill.pending { background: #fdf0e3; color: var(--warn); }
+  .pill.over { background: #e7eefc; color: var(--accent-d); }
+  pre { background: var(--code-bg); padding: 12px; border-radius: 8px; overflow: auto; font-size: 12px; max-height: 420px; }
+  .hint { color: var(--muted); font-size: 12px; }
+  .msg { padding: 8px 12px; border-radius: 6px; margin: 8px 0; font-size: 13px; }
+  .msg.ok { background: #e6f4ea; color: var(--ok); }
+  .msg.err { background: #fdecea; color: var(--danger); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .kv { display: grid; grid-template-columns: 200px 1fr auto; gap: 8px 10px; align-items: center; }
+  .kv .key { font-family: ui-monospace, monospace; font-size: 12px; color: var(--ink); }
+  .kv .status { font-size: 11px; }
+  .hidden { display: none; }
+  small { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>⚙️ AICorrection 管理后台</h1>
+  <div class="conn">
+    <input class="base" id="base" value="/api/v1" title="API 基础路径" />
+    <input class="key" id="key" type="password" placeholder="x-admin-key" title="管理后台密钥" />
+    <button class="btn" id="saveConn">保存连接</button>
+  </div>
+</header>
+
+<nav>
+  <button data-tab="config" class="active">配置覆盖</button>
+  <button data-tab="qbank">知识点库</button>
+  <button data-tab="test">归因调试台</button>
+</nav>
+
+<main>
+  <div id="connMsg" class="msg err hidden">请先填写 Admin Key 并保存连接。</div>
+
+  <!-- 配置 -->
+  <section class="tab active" id="tab-config">
+    <div class="card">
+      <h2>运行时配置覆盖</h2>
+      <p class="hint">这些旋钮原先散落在 env.ts，现在可在后台运行时覆盖（持久化到本地 SQLite settings 表，不回写 .env）。
+        修改后归因系统立即生效，无需重启。带 <span class="pill over">覆盖</span> 标记的为当前已覆盖值。</p>
+      <div id="cfgList" class="kv"></div>
+      <div class="row" style="margin-top:14px">
+        <button class="btn" id="saveCfg">保存修改</button>
+        <span class="hint">仅白名单键可改；布尔用 true/false，数字直接填。</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>已覆盖项（点击恢复默认）</h2>
+      <div id="overrides"></div>
+    </div>
+  </section>
+
+  <!-- 知识点库 -->
+  <section class="tab" id="tab-qbank">
+    <div class="card">
+      <h2>知识点库（QBank）</h2>
+      <div class="row">
+        <select id="qSubj" style="width:160px">
+          <option value="">全部学科</option>
+          <option>english</option><option>politics</option><option>computer</option>
+          <option>math</option><option>logic</option><option>other</option>
+        </select>
+        <input id="qSearch" placeholder="关键词（题干/知识点/答案）" style="flex:1" />
+        <input id="qLimit" type="number" value="50" style="width:90px" title="最多条数(≤500)" />
+        <button class="btn" id="qQuery">查询</button>
+        <button class="ghost" id="qAdd">新增</button>
+        <button class="ghost" id="qReindex">重建索引</button>
+      </div>
+      <div id="qMsg"></div>
+      <div style="overflow:auto;margin-top:10px">
+        <table id="qTable"><thead><tr>
+          <th>item_id</th><th>学科</th><th>知识点</th><th>题干(节选)</th><th>索引</th><th>操作</th>
+        </tr></thead><tbody></tbody></table>
+      </div>
+    </div>
+
+    <div class="card hidden" id="qEditor">
+      <h2 id="qEditorTitle">新增知识点</h2>
+      <input id="ed_id" placeholder="item_id（留空自动生成）" />
+      <label>学科 subject *</label><input id="ed_subject" placeholder="english/politics/computer/..." />
+      <label>知识点 knowledge_point *</label><input id="ed_kp" />
+      <label>题干 question_text *</label><textarea id="ed_q"></textarea>
+      <label>答案 answer_text *</label><textarea id="ed_a"></textarea>
+      <label>解题步骤 solution_steps（可空）</label><textarea id="ed_steps"></textarea>
+      <label>来源 source / license（可空）</label>
+      <div class="grid2"><input id="ed_source" placeholder="developer-notes" /><input id="ed_license" placeholder="developer-own" /></div>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="edSave">保存</button>
+        <button class="ghost" id="edCancel">取消</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- 归因调试台 -->
+  <section class="tab" id="tab-test">
+    <div class="card">
+      <h2>归因调试台</h2>
+      <p class="hint">贴一道题，跑一次真实归因（沿用当前生效策略 single/ensemble/cloud），并强制 RAG 命中展示事实库会补充什么。</p>
+      <label>题干 question *</label><textarea id="tQ"></textarea>
+      <label>学生作答 user_answer（可空）</label><textarea id="tA"></textarea>
+      <label>学科 subject（可空）</label><input id="tSubj" placeholder="english/politics/..." />
+      <div class="row" style="margin-top:12px"><button class="btn" id="tRun">运行归因</button></div>
+      <div id="tMsg"></div>
+      <label>归因结果</label><pre id="tResult">（点击运行）</pre>
+      <label>强制 RAG 命中（绕过 RAG 总开关，展示事实库可补内容）</label><pre id="tRag">（点击运行）</pre>
+    </div>
+  </section>
+</main>
+
+<script>
+const $ = (s) => document.querySelector(s);
+function base() { return ($('#base').value || '/api/v1').replace(/\/+$/,''); }
+function key() { return $('#key').value.trim(); }
+function authHeaders(extra={}) { return Object.assign({'x-admin-key': key()}, extra); }
+function showMsg(el, text, ok) { el.textContent = text; el.className = 'msg ' + (ok ? 'ok' : 'err'); }
+function jsonHeaders() { return authHeaders({'Content-Type':'application/json'}); }
+
+// 连接信息持久化
+$('#key').value = localStorage.getItem('admin_key') || '';
+$('#base').value = localStorage.getItem('admin_base') || '/api/v1';
+$('#saveConn').onclick = () => {
+  localStorage.setItem('admin_key', key());
+  localStorage.setItem('admin_base', base());
+  showMsg($('#connMsg'), '连接信息已保存。', true);
+  $('#connMsg').classList.add('hidden');
+};
+
+// Tab 切换
+document.querySelectorAll('nav button').forEach((b) => {
+  b.onclick = () => {
+    document.querySelectorAll('nav button').forEach(x => x.classList.remove('active'));
+    document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+    b.classList.add('active');
+    $('#tab-' + b.dataset.tab).classList.add('active');
+    if (b.dataset.tab === 'config') loadConfig();
+    if (b.dataset.tab === 'qbank') queryQbank();
+  };
+});
+
+async function api(path, opts = {}) {
+  const url = base() + path;
+  const res = await fetch(url, Object.assign({ headers: authHeaders() }, opts));
+  let data = null;
+  try { data = await res.json(); } catch {}
+  if (res.status === 401) { showMsg($('#connMsg'), '未授权：Admin Key 无效（检查 x-admin-key）。', false); $('#connMsg').classList.remove('hidden'); }
+  return { res, data };
+}
+
+// ---------- 配置 ----------
+const BOOL_KEYS = new Set(['RAG_ENABLED','WEB_SEARCH_ENABLED','DISABLE_THINKING']);
+let cfgCache = null;
+async function loadConfig() {
+  const { res, data } = await api('/admin/config');
+  if (!res.ok) { $('#cfgList').innerHTML = '<span class="hint">加载失败（' + res.status + '）</span>'; return; }
+  cfgCache = data.config;
+  const ov = cfgCache.overrides || {};
+  const order = ['ATTRIBUTION_STRATEGY','RAG_ENABLED','RAG_EMBED_MODEL','RAG_TOP_K','RAG_MIN_SCORE',
+    'WEB_SEARCH_ENABLED','DISABLE_THINKING','ENSEMBLE_THINK_URL','ENSEMBLE_THINK_MODEL',
+    'ENSEMBLE_BROAD_URL','ENSEMBLE_BROAD_MODEL','ENSEMBLE_FAST_URL','ENSEMBLE_FAST_MODEL',
+    'ENSEMBLE_SYNTH_URL','ENSEMBLE_SYNTH_MODEL','CLOUD_BASE_URL','CLOUD_API_KEY','CLOUD_MODEL'];
+  let html = '';
+  for (const k of order) {
+    if (!(k in cfgCache)) continue;
+    const isSecret = k === 'CLOUD_API_KEY';
+    const val = isSecret ? (cfgCache[k] ? '******** (已设置)' : '(未设置)') : String(cfgCache[k]);
+    const isOver = k in ov;
+    html += `<div class="key">${k}</div>`;
+    html += `<div><input data-k="${k}" value="${escapeAttr(val)}" ${isSecret?'type="password"':''}/></div>`;
+    html += `<div class="status">${isOver?'<span class="pill over">覆盖</span>':'<span class="hint">默认</span>'}</div>`;
+  }
+  $('#cfgList').innerHTML = html;
+  renderOverrides(ov);
+}
+function renderOverrides(ov) {
+  const keys = Object.keys(ov || {});
+  if (keys.length === 0) { $('#overrides').innerHTML = '<span class="hint">暂无覆盖，全部使用 env 默认值。</span>'; return; }
+  let html = '<div class="kv">';
+  for (const k of keys) {
+    html += `<div class="key">${k}</div><div>${escapeHtml(String(ov[k]))}</div>`;
+    html += `<div><button class="danger" data-del="${k}">恢复默认</button></div>`;
+  }
+  html += '</div>';
+  $('#overrides').innerHTML = html;
+  $('#overrides').querySelectorAll('[data-del]').forEach(b => {
+    b.onclick = async () => {
+      const { res } = await api('/admin/config/' + b.dataset.del, { method: 'DELETE' });
+      if (res.ok) { showMsg($('#connMsg'), `已恢复默认：${b.dataset.del}`, true); loadConfig(); }
+    };
+  });
+}
+$('#saveCfg').onclick = async () => {
+  const patch = {};
+  $('#cfgList').querySelectorAll('input[data-k]').forEach(inp => {
+    if (inp.value.trim() !== '') patch[inp.dataset.k] = inp.value.trim();
+  });
+  const { res, data } = await api('/admin/config', { method: 'PUT', headers: jsonHeaders(), body: JSON.stringify(patch) });
+  if (res.ok) { showMsg($('#connMsg'), '配置已保存。', true); loadConfig(); }
+  else showMsg($('#connMsg'), '保存失败：' + (data?.message || res.status), false);
+  $('#connMsg').classList.remove('hidden');
+};
+
+// ---------- 知识点库 ----------
+async function queryQbank() {
+  const subj = $('#qSubj').value;
+  const q = $('#qSearch').value;
+  const limit = $('#qLimit').value || 50;
+  const params = new URLSearchParams();
+  if (subj) params.set('subject', subj);
+  if (q) params.set('q', q);
+  params.set('limit', limit);
+  const { res, data } = await api('/admin/qbank?' + params.toString());
+  const tb = $('#qTable tbody');
+  if (!res.ok) { $('#qMsg').innerHTML = '<div class="msg err">查询失败：' + res.status + '</div>'; return; }
+  $('#qMsg').innerHTML = '<span class="hint">共 ' + (data.items?.length||0) + ' 条</span>';
+  tb.innerHTML = (data.items||[]).map(it => {
+    const st = it.embedding_status === 'done'
+      ? '<span class="pill ok">done</span>'
+      : '<span class="pill pending">pending</span>';
+    return `<tr>
+      <td><code>${escapeHtml(it.item_id)}</code></td>
+      <td>${escapeHtml(it.subject||'')}</td>
+      <td>${escapeHtml(it.knowledge_point||'')}</td>
+      <td>${escapeHtml((it.question_text||'').slice(0,40))}</td>
+      <td>${st}</td>
+      <td><button class="ghost" data-edit="${escapeAttr(it.item_id)}">编辑</button>
+          <button class="danger" data-del="${escapeAttr(it.item_id)}">删</button></td>
+    </tr>`;
+  }).join('');
+  tb.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openEditor(b.dataset.edit));
+  tb.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+    if (!confirm('确认删除 ' + b.dataset.del + '？')) return;
+    const { res } = await api('/admin/qbank/' + b.dataset.del, { method: 'DELETE' });
+    if (res.ok) queryQbank();
+  });
+}
+$('#qQuery').onclick = queryQbank;
+$('#qReindex').onclick = async () => {
+  $('#qMsg').innerHTML = '<span class="hint">重建索引中…（见服务端日志）</span>';
+  const { res } = await api('/admin/qbank/reindex', { method: 'POST' });
+  if (res.ok) { $('#qMsg').innerHTML = '<div class="msg ok">重建索引完成。</div>'; queryQbank(); }
+};
+$('#qAdd').onclick = () => openEditor(null);
+function openEditor(id) {
+  $('#qEditor').classList.remove('hidden');
+  $('#qEditorTitle').textContent = id ? '编辑：' + id : '新增知识点';
+  if (id) {
+    api('/admin/qbank/' + id).then(({data}) => {
+      const it = data.item;
+      $('#ed_id').value = it.item_id; $('#ed_subject').value = it.subject||'';
+      $('#ed_kp').value = it.knowledge_point||''; $('#ed_q').value = it.question_text||'';
+      $('#ed_a').value = it.answer_text||''; $('#ed_steps').value = it.solution_steps||'';
+      $('#ed_source').value = it.source||''; $('#ed_license').value = it.license||'';
+    });
+  } else {
+    ['ed_id','ed_subject','ed_kp','ed_q','ed_a','ed_steps','ed_source','ed_license'].forEach(i => $('#'+i).value = '');
+  }
+}
+$('#edCancel').onclick = () => $('#qEditor').classList.add('hidden');
+$('#edSave').onclick = async () => {
+  const id = $('#ed_id').value.trim();
+  const body = {
+    subject: $('#ed_subject').value.trim(),
+    knowledge_point: $('#ed_kp').value.trim(),
+    question_text: $('#ed_q').value.trim(),
+    answer_text: $('#ed_a').value.trim(),
+    solution_steps: $('#ed_steps').value.trim() || null,
+    source: $('#ed_source').value.trim() || null,
+    license: $('#ed_license').value.trim() || null,
+  };
+  if (!body.subject || !body.knowledge_point || !body.question_text || !body.answer_text) {
+    alert('学科 / 知识点 / 题干 / 答案为必填'); return;
+  }
+  const opts = { method: id ? 'PUT' : 'POST', headers: jsonHeaders(), body: JSON.stringify(body) };
+  const url = id ? '/admin/qbank/' + id : '/admin/qbank';
+  const { res, data } = await api(url, opts);
+  if (res.ok) { $('#qEditor').classList.add('hidden'); queryQbank(); }
+  else alert('保存失败：' + (data?.message || res.status));
+};
+
+// ---------- 归因调试台 ----------
+$('#tRun').onclick = async () => {
+  const q = $('#tQ').value.trim();
+  if (!q) { alert('请填写题干'); return; }
+  const body = { question: q, user_answer: $('#tA').value.trim() || undefined, subject: $('#tSubj').value.trim() || undefined };
+  $('#tMsg').innerHTML = '<span class="hint">运行中…</span>';
+  const { res, data } = await api('/admin/attribution/test', { method: 'POST', headers: jsonHeaders(), body: JSON.stringify(body) });
+  if (!res.ok) { $('#tMsg').innerHTML = '<div class="msg err">失败：' + (data?.message||res.status) + '</div>'; return; }
+  $('#tMsg').innerHTML = '<div class="msg ok">完成。</div>';
+  $('#tResult').textContent = JSON.stringify(data.result, null, 2);
+  $('#tRag').textContent = JSON.stringify(data.ragHits, null, 2);
+};
+
+// utils
+function escapeHtml(s){return String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function escapeAttr(s){return escapeHtml(s);}
+
+// 初始加载
+loadConfig();
+</script>
+</body>
+</html>

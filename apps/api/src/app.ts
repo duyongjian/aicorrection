@@ -27,7 +27,9 @@ import qualityRoutes from './routes/qualityRoutes';
 import licenseRoutes from './routes/licenseRoutes';
 import authRoutes from './routes/authRoutes';
 import learnRoutes from './routes/practiceRoutes';
+import adminRoutes from './routes/adminRoutes';
 import { requireLicense } from './middleware/requireLicense';
+import { requireAdmin } from './middleware/requireAdmin';
 import { errorHandler, notFoundHandler } from './middleware/errorHandler';
 import { getAnalysisProvider, getRecognitionProvider } from './services/llm';
 
@@ -141,6 +143,11 @@ export function createApp() {
     });
   });
 
+  // ---- 管理后台（独立授权面）----
+  // 挂载在卡密门禁【之前】：管理后台面向运维/开发者，受自身 x-admin-key 保护，
+  // 不应被线下分发 MVP 的终端用户卡密门禁拦截。配置/知识点/归因调试均经 requireAdmin 把关。
+  app.use(`${base}/admin`, requireAdmin, adminRoutes);
+
   // ---- 线下分发 MVP：卡密门禁 ----
   // 挂载在 base 上、所有业务路由之前。此时 req.path 已被剥掉 base 前缀，
   // 与 requireLicense 的 PUBLIC_RULES 相对路径一致。
@@ -178,6 +185,13 @@ export function createApp() {
   app.use(`${base}/loop`, loopRoutes);
   // 质量优化看板：G1 闸门 / B·C·D 分层 / 代理↔质量校准（运营/质量评估用，受门禁保护）
   app.use(`${base}/quality`, qualityRoutes);
+
+  // 管理后台 UI（独立页面，脱离 API 基础路径，始终可达；密钥在页面内输入并经 x-admin-key 发送）
+  app.get('/admin-ui', (_req, res) => {
+    const uiPath = path.resolve(__dirname, 'admin-ui/index.html');
+    if (fs.existsSync(uiPath)) res.sendFile(uiPath);
+    else res.status(404).json({ ok: false, error: 'admin-ui 不存在，请确认 src/admin-ui/index.html' });
+  });
 
   // 生产态：托管前端静态资源（SPA 回退，排除 /api 避免吞掉未知 API 404）
   const webDist = path.resolve(__dirname, '../../web/dist');

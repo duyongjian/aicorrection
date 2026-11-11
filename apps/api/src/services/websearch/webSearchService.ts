@@ -16,6 +16,7 @@ import { sanitizeSearchQuery } from './sanitize';
 import { logWebSearchAudit } from './audit';
 import { parseBing, parseDuckDuckGo, parseSearXNG, type WebSearchRaw } from './parsers';
 import type { AttributionWebSearch, AttributionWebSearchItem } from '@aicorrection/shared';
+import * as rt from '../admin/runtimeSettings';
 
 /** 无需 API key 的搜索页（与 multi-search-engine 技能对齐；{q} 占位符）。 */
 const ENGINE_URL: Record<string, string> = {
@@ -102,7 +103,8 @@ export async function retrieveWebSearch(
 ): Promise<AttributionWebSearch> {
   // 数据主权闸门：默认（WEB_SEARCH_ENABLED=false）绝不外发；仅当用户在前端显式开启
   // （opts.enabled=true，逐次确认）时才允许触达网络。两者皆关 → 直接空，归因流程零影响。
-  if (!env.WEB_SEARCH_ENABLED && !opts.enabled) {
+  // WEB_SEARCH_ENABLED 可被管理后台运行时覆盖（runtimeSettings），未覆盖时回落 env。
+  if (!rt.getBool('WEB_SEARCH_ENABLED', env.WEB_SEARCH_ENABLED) && !opts.enabled) {
     return { status: 'empty', source: 'web', items: [] };
   }
   if (opts.enabled) {

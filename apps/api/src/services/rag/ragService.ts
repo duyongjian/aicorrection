@@ -11,6 +11,7 @@
 import { env } from '../../config/env';
 import { embed } from './embeddingService';
 import { getItem, query } from './vectorStore';
+import * as rt from '../admin/runtimeSettings';
 import { roundTo } from '../../utils/math';
 import type {
   AttributionReference,
@@ -32,6 +33,13 @@ export interface RetrieveOptions {
   topK?: number;
   /** 覆盖 RAG_MIN_SCORE */
   minScore?: number;
+  /**
+   * 强制启用：忽略全局 RAG_ENABLED 闸门。
+   * 用例：方案2 集成路径把"本地题库 RAG"作为事实 specialist 接入时，
+   * 即便全局因隔离（如基准脚本设 RAG_ENABLED=false）关闭，也应由编排层显式强制开启，
+   * 让事实 specialist 始终可用；生产环境 RAG_ENABLED=true 时此标志为冗余但无害。
+   */
+  force?: boolean;
 }
 
 /**
@@ -43,7 +51,9 @@ export async function retrieveReferences(
   opts: RetrieveOptions = {}
 ): Promise<AttributionReference> {
   // 关闭开关：直接空（不触达嵌入/DB），归因流程零影响。
-  if (!env.RAG_ENABLED) {
+  // 例外：force=true 时（方案2·RAG specialist 由编排层显式强制）不受全局闸门影响。
+  // RAG_ENABLED 可被管理后台运行时覆盖（runtimeSettings），未覆盖时回落 env。
+  if (!rt.getBool('RAG_ENABLED', env.RAG_ENABLED) && !opts.force) {
     return { status: 'empty', source: 'qbank', items: [] };
   }
 

@@ -15,8 +15,10 @@ import { getAllQbankForEmbedding } from '../models/qbankModel';
 import { embed, embedItemSource } from '../services/rag/embeddingService';
 import { upsertVec } from '../services/rag/vectorStore';
 import { env } from '../config/env';
+import { pathToFileURL } from 'node:url';
 
-async function main(): Promise<void> {
+/** 重建所有 pending/未索引题库项的向量（可断点续跑）。供 npm run rag:index 与管理后台复用。 */
+export async function buildQbankIndex(): Promise<void> {
   // 触发迁移，确保表与列存在
   const db = getDb();
   // 批量重建优化：关闭逐提交 fsync（WAL + synchronous=OFF），避免大批量
@@ -50,7 +52,10 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((e) => {
-  console.error(`[buildQbankIndex] 失败：${(e as Error).message}`);
-  process.exit(1);
-});
+// 仅当本文件被直接执行（npm run rag:index）时才自动跑；被 admin 路由 import 时不自启。
+if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
+  buildQbankIndex().catch((e) => {
+    console.error(`[buildQbankIndex] 失败：${(e as Error).message}`);
+    process.exit(1);
+  });
+}

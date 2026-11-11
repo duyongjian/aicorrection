@@ -133,6 +133,47 @@ export function getQbankByReviewStatus(status: string): QbankItem[] {
     .all(status) as QbankItem[];
 }
 
+export interface QbankListFilter {
+  subject?: string;
+  /** 关键词（匹配 question_text / knowledge_point / answer_text，LIKE） */
+  q?: string;
+  limit?: number;
+}
+
+/** 列表查询（管理后台用）：可按学科过滤 + 关键词搜索，默认倒序最多 50 条、上限 500。 */
+export function listQbank(filter: QbankListFilter = {}): QbankItem[] {
+  const conds: string[] = [];
+  const params: unknown[] = [];
+  if (filter.subject) {
+    conds.push('subject = ?');
+    params.push(filter.subject);
+  }
+  if (filter.q) {
+    const lk = `%${filter.q}%`;
+    conds.push('(question_text LIKE ? OR knowledge_point LIKE ? OR answer_text LIKE ?)');
+    params.push(lk, lk, lk);
+  }
+  const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+  const limit = Math.min(Math.max(filter.limit ?? 50, 1), 500);
+  return getDb()
+    .prepare(`SELECT * FROM qbank_items ${where} ORDER BY created_at DESC LIMIT ${limit}`)
+    .all(...params) as QbankItem[];
+}
+
+/** 删除一条题库项（管理后台用）。 */
+export function deleteQbankItem(item_id: string): void {
+  getDb().prepare('DELETE FROM qbank_items WHERE item_id = ?').run(item_id);
+}
+
+/** 单条重索引（管理后台编辑后调用）：重新嵌入 + 写回向量 + 置 status='done'。 */
+export async function reindexItem(item_id: string): Promise<boolean> {
+  const it = getQbankById(item_id);
+  if (!it) return false;
+  const vec = await embed(embedItemSource(it));
+  updateEmbedding(item_id, vec, env.RAG_EMBED_MODEL);
+  return true;
+}
+
 /**
  * UGC 入库入口（BD 方案 D 路线：学生作答 → 标注 → 沉淀为题库）。
  *

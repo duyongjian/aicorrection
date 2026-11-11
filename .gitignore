@@ -41,3 +41,9 @@ data/distribution/
 /*.csv
 *.cards.csv
 *.license.csv
+
+# 杂项临时产物（端口探测重定向残留、误建空文件等，非源码）
+8094
+nul
+.bak
+scripts/start-dev.log*

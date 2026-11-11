@@ -4,7 +4,7 @@
  * 注：降级态以 HTTP 200 + data.status 表达（前后端一致，见 §7.6 取舍说明）。
  * T4: 当 provider 为 mock 或 fallback 时，打标 is_mock=true。
  */
-import { getAnalysisProvider } from '../llm';
+import { getAnalysisProvider, getCloudProvider } from '../llm';
 import { MockProvider } from '../llm/mockProvider';
 import { env } from '../../config/env';
 import { isFeatureEnabled } from '../../config/rollout';
@@ -18,7 +18,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { MOCK_ATTR_MODEL_VERSION } from '@aicorrection/shared';
 import type { AttributionData } from '@aicorrection/shared';
-import type { LlmMessage, LlmResult } from '../llm/provider';
+import type { LlmMessage, LlmResult, LlmProvider } from '../llm/provider';
 
 /**
  * 分析强模型（27B）失败本地告警（plan C 的"告警"环节）。
@@ -52,7 +52,7 @@ import {
   extractClaimedLetter,
   type ParsedTeaching,
 } from './prompt';
-import { verifyImplicitDifferentiation } from './mathVerify';
+import { verifyAnswer } from './mathVerify';
 import { getKnowledgeReferences } from './references';
 import { retrieveReferences } from '../rag/ragService';
 import { retrieveWebSearch } from '../websearch/webSearchService';
@@ -67,13 +67,35 @@ export interface AttrInput {
   is_internal?: boolean;
   /** 用户显式开启联网搜索（前端开关逐次确认）。 */
   enableWebSearch?: boolean;
+  /**
+   * 下列字段为方案2（多模型编排）/ 集成路径内部钩子，正常外部调用无需传：
+   *  - providerOverride：指定本次归因使用的 LLM provider（专精小模型 / 合成器）。
+   *  - skipPersist：仅取模型结论、不落库（专精小模型子调用时避免写入垃圾行）。
+   *  - precomputedText：跳过模型调用，直接使用给定文本进入解析/校验/落库
+   *    （合成器已生成最终文本时，复用同一套解析与持久化逻辑，避免重复实现）。
+   *  - precomputedModelVersion：precomputedText 对应的模型版本标识。
+   */
+  providerOverride?: LlmProvider;
+  skipPersist?: boolean;
+  precomputedText?: string;
+  precomputedModelVersion?: string;
+  /**
+   * 方案2·RAG specialist 开关（集成路径内部钩子）。设为 true 时，编排层在合成阶段强制
+   * 调用本地题库 RAG（retrieveReferences 的 force 模式，绕过全局 RAG_ENABLED 闸门）作为
+   * "事实 specialist" 补强知识盲区（英语语法/史实/政治概念/408 考点）。默认 false 时不接入，
+   * 便于做"集成无 RAG"vs"集成+RAG"的对照实验。
+   */
+  enableRagSpecialist?: boolean;
 }
 
 export async function generateAttribution(
   input: AttrInput
 ): Promise<AttributionData> {
-  // 归因分析走独立的分析 provider（ANALYSIS_*，可指向另一个本地强模型）
-  const provider = getAnalysisProvider();
+  // 归因分析走独立的分析 provider（ANALYSIS_*，可指向另一个本地强模型）；
+  // 方案1(cloud) 走大模型 API；集成路径(providerOverride) 用调用方指定的专精/合成 provider。
+  const provider =
+    input.providerOverride ??
+    (env.ATTRIBUTION_STRATEGY === 'cloud' ? getCloudProvider() : getAnalysisProvider());
 
   // ── K1.4 灰度：确定性分配 cohort + 计算 treatment 功能开关 ──
   // 默认策略 off → cohort.group='control'、useNewExplanationStyle=false，运行期零行为变化。
@@ -82,7 +104,7 @@ export async function generateAttribution(
   // 曝光事件（K1.4 安全红线）：仅当 strategy≠off 时，每条归因尝试发一次曝光；
   // 默认 off / kill-switch（strategy 回落 off）下不发曝光，analytics_events 零新增。
   // best-effort，不阻断主流程。
-  if (cohort.strategy !== 'off') {
+  if (!input.skipPersist && cohort.strategy !== 'off') {
     emitRolloutExposure({
       loopId: input.loop_id,
       anonUserId: input.anon_user_id,
@@ -98,45 +120,50 @@ export async function generateAttribution(
   // 无作答 → 讲解模式（正确答案/正确推导/常见陷阱 + 知识点/本质）。
   const hasAnswer = Boolean(input.user_answer && input.user_answer.trim());
 
-  // 题库 RAG 参考块（P1）：带独立超时 RAG_TIMEOUT_MS（默认 8s）。超时/失败→不注入参考块，归因照常进行。
-  // 注：web 搜索在 RAG 之后发起（用 RAG 命中的知识点作检索词），故此处只起 RAG。
-  const ragPromise = withTimeout(
-    retrieveReferences(input.question, { subject: input.subject }),
-    env.RAG_TIMEOUT_MS
-  ).catch(() => null);
+  // 集成路径子调用（专精小模型 skipPersist / 合成器 precomputed）跳过 RAG/联网检索，
+  // 检索与 grounding 由编排层在合成阶段统一处理，省一次网络往返、避免重复外发。
+  const lightweight = !!(input.skipPersist || input.precomputedText);
+  let refResult: any = null;
+  let webResult: any = null;
+  let referenceBlock = '';
+  let refsBlock = '';
+  if (!lightweight) {
+    // 题库 RAG 参考块（P1）：带独立超时 RAG_TIMEOUT_MS（默认 8s）。超时/失败→不注入参考块，归因照常进行。
+    const ragPromise = withTimeout(
+      retrieveReferences(input.question, { subject: input.subject }),
+      env.RAG_TIMEOUT_MS
+    ).catch(() => null);
 
-  // 知识锚点（grounding）：仅当题干/作答命中特定知识点（如非谓语分词作状语）时，
-  // 在 system 消息尾部拼接人工核查要点，引导模型先复核主谓语态、避免系统性误判。
-  // 锚点不计入最终三行结论，也不出现契约标记词，故不污染 parseAttrTriple 解析。
-  const refs = getKnowledgeReferences(input.question, input.user_answer, input.subject);
-  const refsBlock = refs.length
-    ? '\n\n【知识锚点（仅供你参考 grounding，不要原样复述，也不计入最终三行结论）】\n' +
-      refs.join('\n---\n')
-    : '';
+    // 知识锚点（grounding）：仅当题干/作答命中特定知识点（如非谓语分词作状语）时，
+    // 在 system 消息尾部拼接人工核查要点，引导模型先复核主谓语态、避免系统性误判。
+    // 锚点不计入最终三行结论，也不出现契约标记词，故不污染 parseAttrTriple 解析。
+    const refs = getKnowledgeReferences(input.question, input.user_answer, input.subject);
+    refsBlock = refs.length
+      ? '\n\n【知识锚点（仅供你参考 grounding，不要原样复述，也不计入最终三行结论）】\n' +
+        refs.join('\n---\n')
+      : '';
 
-  // 等 RAG 结果返回（仅用于拼 user 消息 + 派生联网检索词）
-  const refResult = await ragPromise;
-  const referenceBlock = refResult ? buildReferenceBlock(refResult) : '';
-  // 用 RAG 命中的首个知识点作为联网检索词（远比原始题干精准），提升召回质量（P2 增强）。
-  const topKp =
-    refResult && refResult.status === 'ok' && refResult.items?.[0]?.knowledge_point
-      ? refResult.items[0].knowledge_point
-      : undefined;
-  // 联网搜索参考块（P2）：WEB_SEARCH_ENABLED 默认 false（P0 数据主权修复，
-  // 见 docs/P0-数据主权默认外发修复.md）；仅在数据主体显式逐次确认后开启。
-  // 脱敏 ≠ 授权；失败/超时/关闭→不注入，归因照常进行。
-  // 检索词优先用 RAG 知识点，无命中则退回脱敏题干。
-  // enableWebSearch：用户在前端开关逐次开启时才允许突破默认关闭闸门。
-  const webPromise = withTimeout(
-    retrieveWebSearch(input.question, {
-      subject: input.subject,
-      userAnswer: input.user_answer,
-      knowledgePoint: topKp,
-      enabled: input.enableWebSearch,
-    }),
-    env.WEB_SEARCH_TIMEOUT_MS
-  ).catch(() => null);
-  const webResult = await webPromise;
+    // 等 RAG 结果返回（仅用于拼 user 消息 + 派生联网检索词）
+    refResult = await ragPromise;
+    referenceBlock = refResult ? buildReferenceBlock(refResult) : '';
+    // 用 RAG 命中的首个知识点作为联网检索词（远比原始题干精准），提升召回质量（P2 增强）。
+    const topKp =
+      refResult && refResult.status === 'ok' && refResult.items?.[0]?.knowledge_point
+        ? refResult.items[0].knowledge_point
+        : undefined;
+    // 联网搜索参考块（P2）：WEB_SEARCH_ENABLED 默认 false（P0 数据主权修复）；
+    // 仅数据主体显式逐次开启（enableWebSearch）后才外发脱敏检索词。
+    const webPromise = withTimeout(
+      retrieveWebSearch(input.question, {
+        subject: input.subject,
+        userAnswer: input.user_answer,
+        knowledgePoint: topKp,
+        enabled: input.enableWebSearch,
+      }),
+      env.WEB_SEARCH_TIMEOUT_MS
+    ).catch(() => null);
+    webResult = await webPromise;
+  }
   const webBlock = webResult ? buildWebSearchBlock(webResult) : '';
   const userContent = attrUserPrompt(
     input.question,
@@ -185,7 +212,13 @@ export async function generateAttribution(
   // 27B 出问题"先重试再降级"（plan C 前置）：仅对"传输/连接"类快失败重试
   // （模型崩了/没起来/瞬间 5xx）；对完整生成超时（模型在跑但慢）不重试 —— 再等一个完整
   // 超时预算无意义。重试耗尽仍失败 → 诚实降级（analyzing）+ 本地告警（供运维/自动重启 8085）。
-  let analysisRes: LlmResult | null = null;
+  // 集成路径：合成器已生成最终文本 → 跳过模型调用，直接进入解析/校验/落库（复用同一套逻辑）。
+  if (input.precomputedText != null) {
+    text = input.precomputedText;
+    modelVersion = input.precomputedModelVersion ?? provider.name;
+    latencyMs = 0;
+  } else {
+    let analysisRes: LlmResult | null = null;
   let lastErr: unknown = null;
   // 讲解模式（无作答）需容纳"正确推导"多步内容，放宽到 1792；诊断模式维持 1536。
   const maxTokens = hasAnswer ? 1536 : 1792;
@@ -229,6 +262,7 @@ export async function generateAttribution(
       return { status: 'analyzing' };
     }
   }
+  }
 
   // 按模式解析：有作答走诊断三行；无作答走讲解五段。
   if (hasAnswer) {
@@ -240,8 +274,15 @@ export async function generateAttribution(
     }
     if (!parsed.hasThree) return { status: 'incomplete' };
 
+    // 模型无关答案校验（治本）：诊断模式模型不输出正确选项，故直接用独立数值校验
+    // 给出正确选项（字母+原文）。覆盖隐函数/极限/积分/级数等可验证题型；其余返回 unknown → null。
+    const mvDiag = verifyAnswer(input.question);
+    const verifiedCorrect =
+      mvDiag.kind === 'verified' && mvDiag.correctOptionText ? mvDiag.correctOptionText : null;
+
     const attributionId = generateAttributionId();
-    createAttribution({
+    if (!input.skipPersist) {
+      createAttribution({
       attribution_id: attributionId,
       loop_id: input.loop_id,
       anon_user_id: input.anon_user_id,
@@ -252,7 +293,7 @@ export async function generateAttribution(
       cause: parsed.cause ?? null,
       knowledge_point: parsed.knowledge_point ?? null,
       essence: parsed.essence ?? null,
-      correct_answer: null,
+      correct_answer: verifiedCorrect,
       derivation: null,
       pitfalls: null,
       attr_model_version: modelVersion,
@@ -269,8 +310,9 @@ export async function generateAttribution(
       is_internal: input.is_internal ? 1 : 0,
       rollout_group: cohort.group,
       created_at: new Date().toISOString(),
-    });
-    alignExposureMockFlag(input.loop_id, input.anon_user_id, isMock);
+      });
+      alignExposureMockFlag(input.loop_id, input.anon_user_id, isMock);
+    }
     return {
       status: 'ok',
       attribution_id: attributionId,
@@ -278,6 +320,7 @@ export async function generateAttribution(
       cause: parsed.cause as string,
       knowledge_point: parsed.knowledge_point as string,
       essence: parsed.essence as string,
+      correct_answer: verifiedCorrect ?? undefined,
       attr_model_version: modelVersion,
       attr_latency_ms: latencyMs,
       complete: true,
@@ -308,7 +351,7 @@ export async function generateAttribution(
   // 符号/数值独立校验（治本，模型无关）：在隐函数曲面上数值验证 A~D 哪个选项恒成立。
   // 与模型结论不一致时，以数值校验为准覆盖"正确答案"（字母+公式双保险）。
   // 仅对隐函数求导类题生效；其余题返回 unknown 不干预。
-  const mv = verifyImplicitDifferentiation(input.question);
+  const mv = verifyAnswer(input.question);
   if (mv.kind === 'verified' && mv.correctLetter && mv.correctOptionText) {
     const claimed = extractClaimedLetter(teaching.correct_answer ?? '');
     if (!claimed || claimed !== mv.correctLetter) {
@@ -321,7 +364,8 @@ export async function generateAttribution(
   }
 
   const attributionId = generateAttributionId();
-  createAttribution({
+  if (!input.skipPersist) {
+    createAttribution({
     attribution_id: attributionId,
     loop_id: input.loop_id,
     anon_user_id: input.anon_user_id,
@@ -350,8 +394,9 @@ export async function generateAttribution(
     is_internal: input.is_internal ? 1 : 0,
     rollout_group: cohort.group,
     created_at: new Date().toISOString(),
-  });
-  alignExposureMockFlag(input.loop_id, input.anon_user_id, isMock);
+    });
+    alignExposureMockFlag(input.loop_id, input.anon_user_id, isMock);
+  }
   return {
     status: 'ok',
     attribution_id: attributionId,

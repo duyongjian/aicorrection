@@ -11,6 +11,7 @@ import { env } from '../../config/env';
 import { OllamaProvider } from './ollamaProvider';
 import { MockProvider } from './mockProvider';
 import type { LlmProvider } from './provider';
+import * as rt from '../admin/runtimeSettings';
 
 let provider: LlmProvider | null = null;
 let analysisProvider: LlmProvider | null = null;
@@ -87,6 +88,26 @@ export function getAnalysisProvider(): LlmProvider {
     analysisProvider = createAnalysis();
   }
   return analysisProvider;
+}
+
+/**
+ * 方案1·大模型 API provider（OpenAI 兼容端点）。
+ * 由 ATTRIBUTION_STRATEGY=cloud 时选用；OllamaProvider 本就走 OpenAI SDK，
+ * 故换大模型只改 CLOUD_BASE_URL / CLOUD_API_KEY / CLOUD_MODEL 三个环境变量，业务零改动。
+ * disableThinking 强制 false：云端大模型（OpenAI/DeepSeek 等）不识别 chat_template_kwargs，
+ * 传该扩展字段会被拒；本地思考链由服务端/模型自身决定，无需客户端干预。
+ */
+export function getCloudProvider(): LlmProvider {
+  // CLOUD_* 可被管理后台运行时覆盖（runtimeSettings），未覆盖时回落 env / ANALYSIS_*。
+  const baseUrl = rt.getStr('CLOUD_BASE_URL', env.CLOUD_BASE_URL) || env.ANALYSIS_BASE_URL;
+  const textModel = rt.getStr('CLOUD_MODEL', env.CLOUD_MODEL) || env.ANALYSIS_MODEL;
+  const apiKey = rt.getRaw('CLOUD_API_KEY') ?? env.CLOUD_API_KEY;
+  return new OllamaProvider({
+    baseUrl,
+    textModel,
+    apiKey,
+    disableThinking: false,
+  });
 }
 
 export type { LlmProvider, LlmMessage, LlmOptions, LlmResult } from './provider';

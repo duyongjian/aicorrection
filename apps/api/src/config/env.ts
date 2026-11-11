@@ -73,6 +73,36 @@ export const env = {
   ANALYSIS_MODEL: process.env.ANALYSIS_MODEL ?? llmModel,
   ANALYSIS_API_KEY: process.env.ANALYSIS_API_KEY ?? llmApiKey,
 
+  // ---- 归因策略（三选一，默认 single）----
+  //  single   : 单模型归因（现状，沿用 ANALYSIS_* 指向的本地强模型）
+  //  ensemble : 方案2·本地多模型编排（路由→专精小模型并行→多数投票→合成器汇总），免费、本地
+  //  cloud    : 方案1·大模型 API（OpenAI 兼容，CLOUD_* 配置），省事、按量计费
+  ATTRIBUTION_STRATEGY: (process.env.ATTRIBUTION_STRATEGY ?? 'single') as
+    | 'single'
+    | 'ensemble'
+    | 'cloud',
+
+  // 方案1：大模型 API（OpenAI 兼容端点）。ATTRIBUTION_STRATEGY=cloud 时启用。
+  // 例：DeepSeek https://api.deepseek.com/v1 + DEEPSEEK_API_KEY；OpenAI https://api.openai.com/v1 + sk-...
+  CLOUD_BASE_URL: process.env.CLOUD_BASE_URL ?? '',
+  CLOUD_API_KEY: process.env.CLOUD_API_KEY ?? '',
+  CLOUD_MODEL: process.env.CLOUD_MODEL ?? '',
+
+  // 管理后台鉴权 key（独立于卡密/账号体系）。本地默认 dev key 仅开发用；
+  // 生产务必经 .env 配置强随机值，否则任何能访问端口者都能改模型端点/策略/知识点库。
+  ADMIN_API_KEY: process.env.ADMIN_API_KEY ?? 'aicorr-admin-dev',
+
+  // 方案2：本地多模型编排的各角色端点（默认指向现有三个本地小模型，可用 env 覆盖）。
+  //  think=强推理(4B-Thinking)，broad=知识面广(27B-IQ2XS)，fast=快推理(7B-R1)，synth=合成器(默认同 think)。
+  ENSEMBLE_THINK_URL: process.env.ENSEMBLE_THINK_URL ?? 'http://localhost:8096',
+  ENSEMBLE_THINK_MODEL: process.env.ENSEMBLE_THINK_MODEL ?? 'Qwen3-4B-Thinking',
+  ENSEMBLE_BROAD_URL: process.env.ENSEMBLE_BROAD_URL ?? 'http://localhost:8094',
+  ENSEMBLE_BROAD_MODEL: process.env.ENSEMBLE_BROAD_MODEL ?? 'Qwen3.8-27B-IQ2XS',
+  ENSEMBLE_FAST_URL: process.env.ENSEMBLE_FAST_URL ?? 'http://localhost:8097',
+  ENSEMBLE_FAST_MODEL: process.env.ENSEMBLE_FAST_MODEL ?? 'DeepSeek-R1-Distill-7B',
+  ENSEMBLE_SYNTH_URL: process.env.ENSEMBLE_SYNTH_URL ?? 'http://localhost:8096',
+  ENSEMBLE_SYNTH_MODEL: process.env.ENSEMBLE_SYNTH_MODEL ?? 'Qwen3-4B-Thinking',
+
   /**
    * 是否关闭模型的思考链（thinking）。默认 true。
    * 依据：分析强模型 Qwen3.8-27B 跑在 RTX 4060 Laptop（显存仅 8188 MiB，
@@ -112,6 +142,26 @@ export const env = {
     | 'tesseract',
   /** 命中数学信号时是否自动跑一次 Paddle 公式识别（PP-FormulaNet-S，~1.3s） */
   OCR_FORMULA_AUTO: toBool(process.env.OCR_FORMULA_AUTO, true),
+  /**
+   * 公式识别硬时延预算（ms）：PP-FormulaNet-S 在重负载下推理会劣化到 13–16s，直接把整条
+   * 本地 OCR 责任域墙钟拖过 V5 门禁（冷/热 p95 ≤15s）。给公式识别设硬预算，超时即放弃 LaTeX、
+   * 返回纯文本结果（文本识别 ~3.4s 不受影响），把墙钟稳定压在「文本 + 预算」之内。
+   * 常态 4s 内完成则仍拼入 LaTeX（保 V2 字段级准确率）；重负载超时则牺牲 LaTeX 保时延。
+   * 默认 5000ms。
+   */
+  OCR_FORMULA_BUDGET_MS: toNum(process.env.OCR_FORMULA_BUDGET_MS, 5000),
+  /**
+   * 文本识别耗时阈值（ms）：超过即判定机器 CPU 已被外部负载（如同机 8090 视觉模型）占满。
+   * 此时公式识别几乎必然超预算，且会在后台继续吃 CPU 污染后续请求 → 直接跳过公式路、牺牲
+   * LaTeX 保时延。常态文本 ~3.4s 远低于此，公式正常拼入。默认 6000ms。
+   */
+  OCR_FORMULA_TEXT_SLOW_MS: toNum(process.env.OCR_FORMULA_TEXT_SLOW_MS, 6000),
+  /**
+   * 公式识别超时后的冷却窗口（ms）：一次公式超预算即说明 paddle serve 正处于慢推理，
+   * 其在后台仍会持续吃 CPU ~13–16s，若不冷却会拖慢接下来多次请求的文本识别。
+   * 冷却期内所有公式请求直接跳过，让 paddle serve 跑完当前任务、释放 CPU。默认 20000ms。
+   */
+  OCR_FORMULA_COOLDOWN_MS: toNum(process.env.OCR_FORMULA_COOLDOWN_MS, 20000),
   /**
    * 识别双通道合并（默认开）：auto 模式下本地 OCR 成功后，再调一次视觉大模型
    * （MiniCPM-V 等，走 LLM_ 与 VISION_ 端点）做语义描述，与本地 OCR 结果拼接后
