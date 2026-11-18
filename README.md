@@ -14,7 +14,7 @@
 ![Tests](https://img.shields.io/badge/tests-19%20suites-brightgreen)
 ![License](https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-blueviolet)
 
-[快速开始](#-快速开始) · [功能](#-核心功能) · [架构](#-架构) · [部署](#-免费部署) · [模型验收](#-模型验收与honesty) · [文档](#-文档索引)
+[界面实拍](#-界面实拍) · [特色](#-为什么是错题强化闭环而不是又一个拍照搜题) · [功能](#-核心功能) · [架构](#-架构) · [部署](#-免费部署) · [模型验收](#-模型验收与honesty) · [文档](#-文档索引)
 
 </div>
 
@@ -31,7 +31,79 @@
 | 🎛️ **管理后台** | 配置覆盖 · 知识点库 · 归因调试台 | 独立 `x-admin-key` 授权面，与终端用户卡密门禁隔离 |
 | 📊 **质量治理** | G1 闸门 · 灰度发布 · 埋点看板 | K1.4 灰度/cohort + kill-switch；M1 认可率、上传失败细分看板 |
 
-> ⚠️ **诚实声明**：v0.1 是**线下内测体验版**，`attribution` 质量尚未通过正式 G1 验收闸门（见下方模型验收），请勿将内测数据当作正式基线。
+> ⚠️ **诚实声明**：v0.1 是**线下内测体验版**，`attribution` 质量尚未通过正式 G1 验收闸门（见下方模型验收），请勿将内测数据当作正式基线。下列截图来自**独立演示环境**（mock 模型 + 虚构题目，非真实用户数据）。
+
+---
+
+## 📸 界面实拍
+
+> 从「拍一道题」到「看板验收」的完整界面。全部为干净 demo 环境截图：虚构题目 + mock 归因，无真实用户数据。
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/01-upload.png"><img src="docs/screenshots/01-upload.png" alt="上传错题" /></a>
+      <p align="center"><b>① 上传错题</b><br/>拍照 / 图片 / 文本粘贴三入口，草稿自动保存</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/02-attribution.png"><img src="docs/screenshots/02-attribution.png" alt="AI 归因诊断" /></a>
+      <p align="center"><b>② AI 归因诊断</b><br/>正确答案 · 推导 · 陷阱 · 错因 · 知识点 · 本质一句话</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/03-history.png"><img src="docs/screenshots/03-history.png" alt="归因历史" /></a>
+      <p align="center"><b>③ 归因历史</b><br/>每道题的归因结果持久留存，随时闭环回看</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/04-reinforce-diagnosis.png"><img src="docs/screenshots/04-reinforce-diagnosis.png" alt="诊断总览" /></a>
+      <p align="center"><b>④ 强化训练 · 诊断总览</b><br/>错因分布 + 薄弱知识点按错误数排序，一键练同类题</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/06-dashboard.png"><img src="docs/screenshots/06-dashboard.png" alt="M1 验收看板" /></a>
+      <p align="center"><b>⑤ M1 验收看板</b><br/>认可率 / 三项齐全率 / 上传失败率 / 时延 p50·p95 + 闸门</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/07-quality.png"><img src="docs/screenshots/07-quality.png" alt="质量优化看板" /></a>
+      <p align="center"><b>⑥ 质量优化看板</b><br/>G1 闸门 · B·C·D 分层盲评 · 代理↔质量校准</p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/08-mobile-upload.png"><img src="docs/screenshots/08-mobile-upload.png" alt="移动端上传" width="320" /></a>
+      <p align="center"><b>⑦ 移动端 PWA · 上传</b><br/>响应式抽屉导航，手机浏览器可安装</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/09-mobile-attr.png"><img src="docs/screenshots/09-mobile-attr.png" alt="移动端归因" width="320" /></a>
+      <p align="center"><b>⑧ 移动端 PWA · 归因</b><br/>归档与诊断在窄屏下同样可用</p>
+    </td>
+  </tr>
+</table>
+
+<details>
+<summary>更多截图（强化练习 / 移动端全部）</summary>
+
+- [强化练习](docs/screenshots/05-reinforce-practice.png)
+
+</details>
+
+---
+
+## 🌟 为什么是「错题强化闭环」，而不是又一个拍照搜题
+
+市面上拍照搜题工具止步于「给答案」。本项目把重心放在**可信归因 → 可验证掌握**的完整链路，并刻意把「诚实」做成一等公民：
+
+| 特色 | 说明 | 普通搜题工具 |
+|---|---|---|
+| 🧭 **一条 `loop_id` 串起五步** | 上传 → 归因 → 认可/追问 → 练习 → 复述验证，全链路可追溯 | 一次性问答，无闭环 |
+| 🎯 **归因三段式 + 六卡片** | 错因分类、知识点锚定、本质一句话，另附正确答案 / 推导 / 常见陷阱 | 只给答案与解析 |
+| 🛡️ **拒识 + 联网默认关闭** | 拒识层拦截「非题目」防伪造题干；联网搜索默认关闭，开启才外发脱敏题干 | 全量上传、默认联网 |
+| 🔍 **RAG 只引用不虚构** | 题库参考块走真实哈希嵌入检索，检索为空就如实标注 `empty`，绝不编造出处 | 常有虚构参考 |
+| 📐 **公式原生渲染** | KaTeX 渲染推导过程，数学 / 物理符号可读 | 纯文本公式 |
+| 📊 **质量治理可视化** | M1 认可率闸门 + G1 分层盲评 + 代理校准，指标口径全部落文档 | 无质量闭环 |
+| 📱 **PWA + 双部署** | 手机可安装、拍照顺手；Netlify 静态 PWA / HF 全栈容器两套免费配方 | 多为单一形态 |
 
 ---
 
