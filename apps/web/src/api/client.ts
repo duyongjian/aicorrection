@@ -58,6 +58,7 @@ import type {
   ManualCauseRequest,
   ManualCauseResponse,
   KnowledgeGraphResponse,
+  KpMistakesResponse,
   LicensePlanResponse,
   LicenseRenewRequest,
   LicenseRenewResponse,
@@ -588,6 +589,15 @@ export const api = {
   /** R18 知识图谱：导出该用户的知识点共现图。 */
   getKnowledgeGraph(anonUserId: string): Promise<KnowledgeGraphResponse> {
     return http.get(`/learn/graph?anon_user_id=${encodeURIComponent(anonUserId)}`).then((r) => r.data.data);
+  },
+
+  /** R18 图谱下钻：列出某知识点下的错题（归因）。 */
+  listKpMistakes(anonUserId: string, kpKey: string): Promise<KpMistakesResponse> {
+    return http
+      .get(
+        `/learn/graph/mistakes?anon_user_id=${encodeURIComponent(anonUserId)}&kp_key=${encodeURIComponent(kpKey)}`
+      )
+      .then((r) => r.data.data);
   },
 
   // ===================== 商业化：权益层 / 订阅 / 续费 =====================

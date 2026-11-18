@@ -21,6 +21,7 @@ const {
   listCustomKps,
   setManualCause,
   getKnowledgeGraph,
+  getKpMistakes,
 } = await import('./knowledgeService');
 const { ERROR_CODES } = await import('@aicorrection/shared');
 
@@ -63,6 +64,25 @@ function seed() {
             ('kg2','lg2',?,'函数','kp_002','concept_confusion'),
             ('kg3','lg3',?,'导数','kp_003','method_error')`
   ).run(UG, UG, UG);
+
+  // R18 断链回归：真实归因写库时 id 恒 null，只有 knowledge_point 文本。
+  const UT = 'u-graph-text';
+  db.prepare(`INSERT OR IGNORE INTO users (anon_user_id, segment, register_ts) VALUES (?, 'kaoyan', datetime('now'))`).run(UT);
+  for (const lid of ['lt1', 'lt2', 'lt3', 'lt4', 'lt5']) {
+    db.prepare(
+      `INSERT INTO loop_sessions (loop_id, anon_user_id, segment, session_id, start_ts, loop_complete)
+       VALUES (?, ?, 'kaoyan', 's1', datetime('now'), 0)`
+    ).run(lid, UT);
+  }
+  db.prepare(
+    `INSERT INTO attributions
+       (attribution_id, loop_id, anon_user_id, question, cause, knowledge_point, knowledge_point_id, cause_id)
+     VALUES ('kt1','lt1',?,'求数列极限 A','概念混淆A','数列极限',NULL,'concept_confusion'),
+            ('kt2','lt2',?,'求数列极限 B','概念混淆B','数列极限',NULL,'concept_confusion'),
+            ('kt3','lt3',?,'判断连续性','概念混淆C','函数连续性',NULL,'concept_confusion'),
+            ('kt4','lt4',?,'无知识点题目',NULL,NULL,NULL,NULL),
+            ('kt5','lt5',?,'空白知识点题目',NULL,'   ',NULL,NULL)`
+  ).run(UT, UT, UT, UT, UT);
 }
 
 before(() => {
@@ -134,4 +154,52 @@ test('R18 getKnowledgeGraph：共享错因连边，孤立点无连接', () => {
   // 节点 error_count 累计
   const n001 = g.nodes.find((n) => n.kp_key === 'kp_001')!;
   assert.equal(n001.error_count, 1);
+});
+
+test('R18 断链回归：只有 knowledge_point 文本（id=null）的归因也进入图谱', () => {
+  const g = getKnowledgeGraph('u-graph-text');
+  const limit = g.nodes.find((n) => n.kp_key === 'txt:数列极限');
+  assert.ok(limit, '应生成 txt:数列极限 节点');
+  assert.equal(limit!.kp_text, '数列极限', '显示文本必须是真实知识点，而不是 id');
+  assert.equal(limit!.error_count, 2);
+  assert.ok(g.nodes.some((n) => n.kp_key === 'txt:函数连续性'));
+  // 知识点与题面均为空的老数据不应制造噪声节点
+  assert.ok(!g.nodes.some((n) => n.kp_key === 'txt:（未标注知识点）'));
+  const edge = g.edges.find(
+    (e) =>
+      (e.source === 'txt:数列极限' && e.target === 'txt:函数连续性') ||
+      (e.target === 'txt:数列极限' && e.source === 'txt:函数连续性')
+  );
+  assert.ok(edge, '文本知识点共享 concept_confusion，应连边');
+  assert.equal(edge!.weight, 1);
+});
+
+test('R18 getKpMistakes：txt: 与受控 id 两种 kp_key 都能命中', () => {
+  const textRes = getKpMistakes('u-graph-text', 'txt:数列极限');
+  assert.equal(textRes.kp_key, 'txt:数列极限');
+  assert.equal(textRes.kp_text, '数列极限');
+  assert.equal(textRes.items.length, 2);
+  assert.ok(textRes.items.every((i) => i.knowledge_point === '数列极限'));
+  assert.ok(textRes.items.some((i) => i.question === '求数列极限 A'));
+  assert.ok(textRes.items.every((i) => i.created_at));
+
+  const idRes = getKpMistakes('u-graph', 'kp_001');
+  assert.equal(idRes.kp_text, '一元一次方程');
+  assert.equal(idRes.items.length, 1);
+  assert.equal(idRes.items[0].attribution_id, 'kg1');
+
+  // kp_key 首尾空白归一化，与 normalizeKpKey 口径一致
+  assert.equal(getKpMistakes('u-graph-text', '  txt:数列极限  ').items.length, 2);
+  assert.equal(getKpMistakes('u-graph-text', 'txt:不存在的知识点').items.length, 0);
+});
+
+test('R18 getKpMistakes：参数缺失 → 400 PARAM_INVALID', () => {
+  assert.throws(
+    () => getKpMistakes('u-graph', ''),
+    (e: Error) => (e as { code?: number }).code === ERROR_CODES.PARAM_INVALID
+  );
+  assert.throws(
+    () => getKpMistakes('', 'kp_001'),
+    (e: Error) => (e as { code?: number }).code === ERROR_CODES.PARAM_INVALID
+  );
 });

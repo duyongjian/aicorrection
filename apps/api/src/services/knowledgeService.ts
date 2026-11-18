@@ -4,7 +4,7 @@
  * 改动会触发聚合重算（R20 改了 kp → 重算新旧两处掌握度）。
  */
 import { HttpError } from '../middleware/errorHandler';
-import { ERROR_CODES, CAUSE_TAXONOMY } from '@aicorrection/shared';
+import { ERROR_CODES, CAUSE_TAXONOMY, normalizeKpKey } from '@aicorrection/shared';
 import type {
   CreateCustomKpRequest,
   CreateCustomKpResponse,
@@ -14,6 +14,7 @@ import type {
   KnowledgeGraphResponse,
   KnowledgeGraphNode,
   KnowledgeGraphEdge,
+  KpMistakesResponse,
 } from '@aicorrection/shared';
 import {
   insertCustomKp,
@@ -23,6 +24,7 @@ import {
   patchAttributionCause,
   getAttributionByLoopForUser,
   getAttributionsKpCause,
+  listAttributionsForKp,
 } from '../models/attributionModel';
 import { recomputeMastery } from './aggregationService';
 
@@ -120,9 +122,11 @@ export function getKnowledgeGraph(anon_user_id: string): KnowledgeGraphResponse 
     { kp_key: string; kp_text: string; error_count: number; causes: Set<string> }
   >();
   for (const row of rows) {
-    const key = row.knowledge_point_id as string;
+    // 与 R10 聚合同口径：优先受控 id，缺失时退化为 txt:<知识点文本>。
+    const key = normalizeKpKey(row.knowledge_point_id, row.knowledge_point);
+    const text = (row.knowledge_point || '').trim() || key;
     if (!nodeMap.has(key)) {
-      nodeMap.set(key, { kp_key: key, kp_text: key, error_count: 0, causes: new Set() });
+      nodeMap.set(key, { kp_key: key, kp_text: text, error_count: 0, causes: new Set() });
     }
     const n = nodeMap.get(key)!;
     n.error_count += 1;
@@ -149,4 +153,25 @@ export function getKnowledgeGraph(anon_user_id: string): KnowledgeGraphResponse 
   }));
 
   return { anon_user_id, nodes, edges };
+}
+
+/**
+ * R18 图谱下钻：按图谱节点的 kp_key 列出该用户错题。
+ * kp_key 由 normalizeKpKey 生成（受控 id 或 txt:<文本>），此处用同一函数逐条匹配，
+ * 保证节点与下钻列表不会出现口径漂移。
+ */
+export function getKpMistakes(anon_user_id: string, kp_key: string): KpMistakesResponse {
+  if (!anon_user_id || !anon_user_id.trim()) {
+    throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, '缺少 anon_user_id');
+  }
+  if (!kp_key || !kp_key.trim()) {
+    throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, '缺少 kp_key');
+  }
+  const key = kp_key.trim();
+  const matches = listAttributionsForKp(anon_user_id.trim()).filter(
+    (r) => normalizeKpKey(r.knowledge_point_id, r.knowledge_point) === key
+  );
+  const first = matches[0];
+  const kp_text = first?.knowledge_point?.trim() || (key.startsWith('txt:') ? key.slice(4) : key);
+  return { anon_user_id: anon_user_id.trim(), kp_key: key, kp_text, items: matches };
 }

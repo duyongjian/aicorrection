@@ -43,6 +43,8 @@ interface NavItem {
   icon: ReactNode;
   /** 所需的付费权益；缺权益时侧边栏显示锁定徽标（与后端 requireEntitlement 对称）。 */
   requiredEntitlement?: Entitlement;
+  /** 页面同时依赖多个权益时使用（全部具备才解锁）。 */
+  requiredEntitlements?: Entitlement[];
 }
 
 interface NavGroup {
@@ -64,7 +66,12 @@ const NAV_GROUPS: NavGroup[] = [
       { to: '/reinforce/diagnosis', label: '诊断总览', icon: <InsightsOutlinedIcon /> },
       { to: '/reinforce/practice', label: '强化练习', icon: <FitnessCenterOutlinedIcon /> },
       { to: '/reinforce/review', label: '复习记忆', icon: <RepeatOutlinedIcon />, requiredEntitlement: 'spaced_review' },
-      { to: '/reinforce/knowledge', label: '知识管理', icon: <AccountTreeOutlinedIcon />, requiredEntitlement: 'custom_kp' },
+      {
+        to: '/reinforce/knowledge',
+        label: '知识管理',
+        icon: <AccountTreeOutlinedIcon />,
+        requiredEntitlements: ['custom_kp', 'knowledge_graph'],
+      },
       { to: '/reinforce/account', label: '账户权益', icon: <WorkspacePremiumOutlinedIcon /> },
     ],
   },
@@ -162,8 +169,9 @@ export default function AppShell({ children, onOpenAccount, identity }: AppShell
             </Typography>
             <List disablePadding>
               {group.items.map((item) => {
-                const reqEnt = item.requiredEntitlement;
-                const locked = !!reqEnt && !planLoading && !has(reqEnt);
+                const reqEnts = item.requiredEntitlements
+                  ?? (item.requiredEntitlement ? [item.requiredEntitlement] : []);
+                const locked = !planLoading && reqEnts.some((ent) => !has(ent));
                 return (
                   <ListItemButton
                     key={item.to}
@@ -183,9 +191,9 @@ export default function AppShell({ children, onOpenAccount, identity }: AppShell
                       primary={item.label}
                       primaryTypographyProps={{ fontWeight: 600, fontSize: 14.5 }}
                     />
-                    {locked && reqEnt && (
+                    {locked && reqEnts.length > 0 && (
                       <Tooltip
-                        title={`需「${ENTITLEMENT_LABELS[reqEnt]}」权益（升级专业版 / 旗舰版解锁）`}
+                        title={`需「${reqEnts.map((ent) => ENTITLEMENT_LABELS[ent]).join('、')}」权益（升级专业版 / 旗舰版解锁）`}
                       >
                         <LockOutlinedIcon sx={{ fontSize: 16, color: 'text.disabled', ml: 0.5 }} />
                       </Tooltip>

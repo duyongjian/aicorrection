@@ -32,6 +32,7 @@ import {
   listCustomKps,
   setManualCause,
   getKnowledgeGraph,
+  getKpMistakes,
 } from '../services/knowledgeService';
 import { ERROR_CODES } from '@aicorrection/shared';
 import { HttpError } from '../middleware/errorHandler';
@@ -311,6 +312,23 @@ router.patch(
     }
   }
 );
+
+/**
+ * R18 图谱下钻：按知识点列出该用户的错题。需要 knowledge_graph 权益。
+ * 放在 /graph 之前更符合路径特例优先的直觉；Express 精确匹配下二者互不干扰。
+ */
+router.get('/graph/mistakes', requireEntitlement('knowledge_graph'), (req, res, next) => {
+  try {
+    const anon_user_id = requireAnonUserId(req);
+    const kpKey = req.query.kp_key;
+    if (typeof kpKey !== 'string' || !kpKey.trim()) {
+      throw new HttpError(ERROR_CODES.PARAM_INVALID, 400, '缺少 kp_key');
+    }
+    res.json(ok(getKpMistakes(anon_user_id, kpKey)));
+  } catch (e) {
+    next(e);
+  }
+});
 
 /** R18 知识图谱：导出该用户的知识点共现图（节点 + 边）。需要 knowledge_graph 权益。 */
 router.get('/graph', requireEntitlement('knowledge_graph'), (req, res, next) => {

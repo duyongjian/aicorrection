@@ -7,13 +7,15 @@ import { useLicensePlan } from '../context/LicensePlanContext';
 export default function KnowledgePage() {
   const anonUserId = useLoopStore((s) => s.anonUserId);
   const { has, loading } = useLicensePlan();
-  const locked = !loading && !has('custom_kp');
+  // 该页同时调用 /custom-kp（custom_kp）与 /graph、/graph/mistakes（knowledge_graph），
+  // 两个权益都要有，否则正常开通用户会在其中一个请求上收到 403。
+  const locked = !loading && (!has('custom_kp') || !has('knowledge_graph'));
 
   return (
     <Box>
       <Typography variant="h6" sx={{ mb: 2 }}>知识管理</Typography>
       {locked ? (
-        <UpgradePrompt entitlement="custom_kp" featureName="知识管理" />
+        <UpgradePrompt entitlement="knowledge_graph" featureName="知识管理" />
       ) : anonUserId ? (
         <KnowledgePanel anonUserId={anonUserId} />
       ) : (

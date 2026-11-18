@@ -6,6 +6,7 @@ import { env } from '../config/env';
 import type {
   Attribution,
   HistoryItem,
+  KpMistakeItem,
   InaccurateReason,
   RateAction,
   ReviewPendingItem,
@@ -161,14 +162,44 @@ export function getAttributionByLoopForUser(
     .get(loop_id, anon_user_id) as Attribution | undefined;
 }
 
-/** R18 知识图谱数据源：该用户全部（kp_key, cause_id）对（仅取有 kp 归属的归因）。 */
-export function getAttributionsKpCause(
-  anon_user_id: string
-): Array<{ knowledge_point_id: string | null; cause_id: string | null }> {
+/** R18 知识图谱数据源行：归一 kp_key 所需的原始字段 + 共现用的 cause_id。 */
+export interface AttributionsKpCauseRow {
+  knowledge_point_id: string | null;
+  knowledge_point: string | null;
+  cause_id: string | null;
+  loop_id: string;
+}
+
+/**
+ * R18 知识图谱数据源：该用户全部有 kp 归属的归因。
+ * 受控 id 与 AI 文本知识点都算归属（归因写库时 id 恒为 null，不能只按 id 过滤）。
+ * 归一成 kp_key 的动作留给 service 层的 normalizeKpKey，口径与 R10 聚合一致。
+ */
+export function getAttributionsKpCause(anon_user_id: string): AttributionsKpCauseRow[] {
   return getDb()
     .prepare(
-      `SELECT knowledge_point_id, cause_id FROM attributions
-       WHERE anon_user_id = ? AND knowledge_point_id IS NOT NULL`
+      `SELECT knowledge_point_id, knowledge_point, cause_id, loop_id FROM attributions
+       WHERE anon_user_id = ?
+         AND (knowledge_point_id IS NOT NULL
+              OR (knowledge_point IS NOT NULL AND TRIM(knowledge_point) <> ''))`
     )
-    .all(anon_user_id) as Array<{ knowledge_point_id: string | null; cause_id: string | null }>;
+    .all(anon_user_id) as AttributionsKpCauseRow[];
+}
+
+/**
+ * R18 图谱下钻数据源：该用户全部归因（含文本 / 受控 id 两种 kp 口径）。
+ * kp_key 的匹配在 service 层用 normalizeKpKey 完成，确保与图谱节点完全同口径。
+ */
+export function listAttributionsForKp(
+  anon_user_id: string
+): Array<KpMistakeItem> {
+  return getDb()
+    .prepare(
+      `SELECT attribution_id, loop_id, anon_user_id, question, user_answer,
+              cause, cause_id, knowledge_point, knowledge_point_id, essence, created_at
+       FROM attributions
+       WHERE anon_user_id = ?
+       ORDER BY created_at DESC`
+    )
+    .all(anon_user_id) as KpMistakeItem[];
 }

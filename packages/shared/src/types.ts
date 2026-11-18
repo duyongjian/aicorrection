@@ -954,3 +954,27 @@ export interface KnowledgeGraphResponse {
   nodes: KnowledgeGraphNode[];
   edges: KnowledgeGraphEdge[];
 }
+
+/** R18 图谱节点下钻：某知识点对应的错题（归因）列表项。 */
+export interface KpMistakeItem {
+  attribution_id: string;
+  loop_id: string;
+  anon_user_id: string;
+  /** 题目快照（迁移 012 之前的老数据可能为 null） */
+  question: string | null;
+  user_answer: string | null;
+  cause: string | null;
+  cause_id: string | null;
+  knowledge_point: string | null;
+  knowledge_point_id: string | null;
+  essence: string | null;
+  created_at: string;
+}
+
+/** R18 图谱节点下钻响应。 */
+export interface KpMistakesResponse {
+  anon_user_id: string;
+  kp_key: string;
+  kp_text: string;
+  items: KpMistakeItem[];
+}
