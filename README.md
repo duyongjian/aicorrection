@@ -109,7 +109,7 @@
 
 ## 🗺️ 错题知识图谱 / 思维导图：愿景与当前进度
 
-> 这是产品规划里最容易被误解的一块——**设计意图很明确，但当前尚未打通**。下面把「产品愿景」与「代码实况」分开陈述，绝不把规划写成已交付。
+> 这是产品规划里最容易被误解的一块——设计意图很明确，历史上却一度是「代码在、数据空」的骨架。**2026-11-18 已把端到端链路打通**（commit [`d3660bc`](commit/d3660bc)），「点知识点选错题」从规划变为可运行功能。下面把「产品愿景」与「当前进度」分开陈述，并如实标注尚未跨过的质量闸门。
 
 ### 🎯 产品愿景（设计意图 · P2 / M7）
 
@@ -125,24 +125,39 @@
 
 ### 📊 当前开发进度（诚实标定 · 截至 2026-11-18）
 
-规划文档把 R18 的状态记为「**已通电（未过闸门验证）**」（commit `d36efbe` / `d74114b`）。代码侧核查后，逐项进度如下：
+历史状态：R18 曾长期停留在「**已通电、未过闸门验证**」（commit `d36efbe` / `d74114b`）——共现算法与 SVG 原型齐备，但归因写库 `knowledge_point_id` 恒为 `null`、图谱 SQL 要求 `IS NOT NULL`，导致真实用户图谱**恒为空**。**2026-11-18 提交 `d3660bc` 已打通端到端链路**，逐项如下：
 
 | 能力项 | 状态 | 证据 / 说明 |
 |---|---|---|
-| 后端共现图算法 `getKnowledgeGraph` | ✅ 已落地（含单测） | `apps/api/src/services/knowledgeService.ts:112-152`、`models/attributionModel.ts:165-174` |
-| 前端 SVG 环形共现图渲染 | ⚠️ 骨架已落地 | `apps/web/src/components/panels/KnowledgePanel.tsx:66-134`，手写 300×300 SVG（非 d3/echarts） |
-| 前端页面与路由 / 权益门 | ✅ 已落地 | `pages/KnowledgePage.tsx`、`App.tsx:30`、`AppShell.tsx:67` |
-| API 端点 `GET /learn/graph` 与客户端接线 | ✅ 已接通 | `routes/practiceRoutes.ts:315-323`、`api/client.ts:589-591` |
-| R17 自定义知识点增 / 查 | ✅ 已落地（与图谱不联动） | `services/knowledgeService.ts:31-52`、`models/customKpModel.ts` |
-| **图谱数据源 `knowledge_point_id`** | ❌ **断链（根因）** | 归因写库恒为 `null`（`attribution/attributionService.ts:305,389`），而图谱 SQL 要求 `IS NOT NULL`（`attributionModel.ts:170-171`）→ 真实用户图谱节点**恒为空** |
-| 节点显示知识点文本 | ❌ 未接通 | `knowledgeService.ts:125` 直接拿 `kp_key` 充当文本，图上显示 `kp_001` 这类 id |
-| **「导图上点知识点 → 选错题」** | ❌ **未实现** | 节点无点击事件、无 `selectedKp` 状态；**不存在**「按知识点列错题」的后端端点 |
-| 权益门一致性 | ⚠️ 待修 | 页面用 `custom_kp` 解锁，但 `/learn/graph` 要 `knowledge_graph` |
-| G8「可视有用」闸门 | ❌ **未判** | 规划 §11.3 明确 G8 等尚未判；`R09` 覆盖率、`R14` 掌握状态等前置未达阈值 |
+| **图谱数据源（根因修复）** | ✅ **已打通** | 查询层改用 `normalizeKpKey(id, text)` 派生 kp_key：有受控 id 优先用 id，否则退化 `txt:<知识点文本>`——与 R10 聚合口径一致；不伪造 id，保持写库 `null` 的诚实语义。空白知识点不入图 |
+| 节点显示知识点文本 | ✅ 已接通 | `knowledgeService.ts` 用真实 `knowledge_point` 文本，不再显示 `kp_001` 这类 id |
+| 后端共现图算法 `getKnowledgeGraph` | ✅ 已落地（含单测） | `services/knowledgeService.ts`、`models/attributionModel.ts` |
+| 新增「按知识点列错题」端点 | ✅ 已落地 | `GET /learn/graph/mistakes`（`knowledge_graph` 权益）+ `getKpMistakes` + 共享类型 `KpMistakeItem`；两种 kp_key 均命中、含越权隔离 |
+| 前端 SVG 环形图 + 点选下钻 | ✅ 已落地 | `KnowledgePanel.tsx`：节点可点击高亮、下钻错题列表、点击跳原题、loading/空/错三态 + 竞态保护 |
+| 前端页面 / 路由 / 权益门 | ✅ 已对齐 | 页面与侧边栏权益统一为 `custom_kp` + `knowledge_graph`，与后端端点一致，正常已开通用户不会 403 |
+| **端到端验证** | ✅ **已实测** | 单测 9/9；QA 独立复验：数据源 24/24、service/隔离 11/11、HTTP 端点 16/16；**真实浏览器 E2E**：节点渲染 → 点击 → 下钻列表 → 跳 `/history/:loopId` 全通 |
+| G8「可视有用」闸门 | ⚠️ **仍待判** | 代码可用 ≠ 质量闸门通过。规划 G8 及 `R09` 覆盖率、`R14` 掌握状态等前置尚未达阈值；绑定订阅的 P2 商业化也未上线 |
 
-> **一句话结论**：`R18` 目前是「**后端算法 + 前端原型 + 单测**」齐备、但**端到端数据链断开**的骨架——真实用户打开「知识管理」会看到空图；「在导图上通过知识点选择错题」这个具体场景**尚未实现**，属于 P2 目标而非现状。补齐需要三件事：① 归因写库时把 `knowledge_point` 文本映射成 `kp_key`；② 图谱节点可点击 + `selectedKp` 状态；③ 新增「按 kp_key 列出错题」端点 + 前端筛选列表。
+**实拍：点知识点 → 下钻错题 → 跳原题**（干净 demo 环境，虚构题目）
 
-> 📌 **与顶部范围防火墙的关系**：本页开头「v0.1 可视化 / 图谱渲染不在范围」指的是 **v0.1 正式交付范围**（与技术架构设计文档逐字一致，准确）；上表骨架来自 P1 强化期提前预埋的代码，规划将其定性为「**有意提前预埋**」而非 v0.1 交付物，二者不矛盾。
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/10-kg-before-click.png"><img src="docs/screenshots/10-kg-before-click.png" alt="知识图谱节点" /></a>
+      <p align="center"><b>知识图谱（点击前）</b><br/>文本型知识点入图，节点为真实知识点名</p>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/screenshots/11-kg-drilldown.png"><img src="docs/screenshots/11-kg-drilldown.png" alt="点节点下钻错题" /></a>
+      <p align="center"><b>点节点 → 下钻错题</b><br/>橙色高亮选中节点，列出该知识点错题，点击可跳原题</p>
+    </td>
+  </tr>
+</table>
+
+> **一句话结论**：`R18` 已从「数据断链骨架」变为**端到端可运行的知识点下钻功能**——文本型归因能入图、节点显示真实知识点、点击即列出该知识点错题并可跳回原题；单测 + QA 独立复验 + 浏览器 E2E 均已通过。**但 G8「可视有用」质量闸门仍未判**，规划里的学科知识体系 v1（真正的成本大头）、R09/R14 前置与商业化绑定尚未完成——因此这是「工程链路打通」，不是「P2 正式交付」。
+
+> 📌 **与顶部范围防火墙的关系**：本页开头「v0.1 可视化 / 图谱渲染不在范围」指的是 **v0.1 正式交付范围**（与技术架构设计文档逐字一致，准确）；本功能属 P2 规划提前预埋且有条件落地，二者不矛盾。
+
+> 🧪 **复验边界**：全量测试 214 例中 2 例 RAG 失败（`no such table: settings`）经 QA 用父提交 worktree 独立复现，确认为既有基线、与本轮无关；`getKpMistakes` 当前未分页，极端大量错题会全量返回。
 
 ---
 
