@@ -42,6 +42,32 @@ export interface RecognizeImageOpts {
 /** 本地 OCR 文本引擎名（受 OCR_TEXT_ENGINE 配置约束） */
 const TEXT_ENGINE: LocalOcrEngine = env.OCR_TEXT_ENGINE;
 
+/**
+ * 公式识别独立时延预算（ms）：PP-FormulaNet-S 在重负载下推理会劣化到 13–16s，直接把整条
+ * 生产链路拖过 V5 门禁。给公式识别设硬预算，超时即放弃 LaTeX、返回纯文本结果（文本识别
+ * ~3.4s 不受影响），把本地 OCR 责任域墙钟稳定压在「文本 + 预算」之内。常态 4s 内完成则仍
+ * 拼入 LaTeX（保 V2 字段级准确率）；重负载超时则牺牲 LaTeX 保时延。可通过 env.OCR_FORMULA_BUDGET_MS 覆盖。
+ */
+const FORMULA_BUDGET_MS = Number(env.OCR_FORMULA_BUDGET_MS ?? 5000);
+
+/**
+ * 文本识别耗时阈值（ms）：超过即判定机器 CPU 已被外部负载（如同机 8090 视觉模型）占满。
+ * 此时公式识别几乎必然超预算，且会在后台继续吃 CPU 污染后续请求 → 直接跳过公式路、牺牲
+ * LaTeX 保时延。常态文本 ~3.4s 远低于此，公式正常拼入。可通过 env.OCR_FORMULA_TEXT_SLOW_MS 覆盖。
+ */
+const FORMULA_TEXT_SLOW_MS = Number(env.OCR_FORMULA_TEXT_SLOW_MS ?? 6000);
+
+/**
+ * 公式识别超时后的冷却窗口（ms）：一次公式超预算即说明 paddle serve 正处于慢推理，
+ * 其在后台仍会持续吃 CPU ~13–16s，若不冷却会拖慢接下来多次请求的文本识别。
+ * 冷却期内所有公式请求直接跳过，让 paddle serve 跑完当前任务、释放 CPU。
+ * 可通过 env.OCR_FORMULA_COOLDOWN_MS 覆盖。
+ */
+const FORMULA_COOLDOWN_MS = Number(env.OCR_FORMULA_COOLDOWN_MS ?? 20000);
+
+/** 公式识别冷却截止时间戳（ms）；模块级启发式，避免 paddle 后台慢推理污染后续请求。 */
+let formulaCooldownUntil = 0;
+
 // ---- 公式触发判定（保守：避免每张图都多花 ~1.3s 还拿到垃圾 LaTeX）----
 
 /** 命中即视为数学学科 */
@@ -58,15 +84,23 @@ const MATH_SUBJECT_KEYS = [
   '离散数学',
 ];
 
-/** 公式符号（出现任一即触发，不必同时含数字） */
-const MATH_SYMBOL_RE = /[∫√∑π±×÷≤≥≠≈∇∂^]/;
+/** 公式符号（出现任一即触发，不必同时含数字）。注意：去掉 ^ —— 句中指数 e^(y+az) 也会命中，
+ *  会误触发对整段题干跑 PP-FormulaNet-S（产出 exclamation_flood 垃圾 LaTeX，纯浪费时延）。 */
+const MATH_SYMBOL_RE = /[∫√∑π±×÷≤≥≠≈∇∂]/;
+/** 强数学结构符号（localIsSufficient 用，含义同 MATH_SYMBOL_RE 这里取不含 ^ 的口径）。 */
+const MATH_STRUCT_RE = /[∫√∑π±×÷≤≥≠≈∇∂]/;
 /** 中文数学词 */
 const MATH_WORD_RE =
   /(求|解|证明|函数|方程|导数|积分|极限|矩阵|概率|极值|单调|数列|向量|微分|不等式)/;
 
 /**
- * 判定是否值得再跑一次 Paddle 公式识别（PP-FormulaNet-S，~1.3s）。
- * 命中条件：学科是数学类，或文本含"= 且有数字"，或含公式符号，或含中文数学词。
+ * 判定是否值得再跑一次 Paddle 公式识别（PP-FormulaNet-S）。
+ * 命中条件（保守，避免对整段题干误跑公式模型产出垃圾且浪费时延）：
+ *  - 学科是数学类；或
+ *  - 文本含"= 且有数字"，或含强结构公式符号（∫√∑∂∇π 等）。
+ * 不再用中文数学词（方程/函数/证明…）触发：这类词出现在「整段题干」里，题干已由 rapid
+ * 完整捕获，再跑 standalone 公式模型只会产出 exclamation_flood 垃圾 LaTeX（实测 implicit-partial-choice
+ * 每次都命中且被丢弃），徒增 4–12s 时延。
  */
 export function shouldTryFormula(subject?: string, text?: string): boolean {
   const s = (subject ?? '').toLowerCase();
@@ -75,7 +109,7 @@ export function shouldTryFormula(subject?: string, text?: string): boolean {
   const t = text ?? '';
   if (!t) return false;
   const hasEqAndDigit = t.includes('=') && /\d/.test(t);
-  return hasEqAndDigit || MATH_SYMBOL_RE.test(t) || MATH_WORD_RE.test(t);
+  return hasEqAndDigit || MATH_STRUCT_RE.test(t);
 }
 
 /** 文本入口：原文即为题干，无需 OCR。 */
@@ -183,25 +217,64 @@ async function recognizeImageLocal(
   imagePath: string,
   opts: RecognizeImageOpts
 ): Promise<OcrResult> {
+  // 串行-条件式本地 OCR（P1-b 时延优化 · 修订版）：
+  // 先跑轻量 text serve（rapid，安静 ~1.8s），再「仅当文本提示需要公式」时跑重型
+  // formula serve（paddle + PP-FormulaNet-S）。
+  //
+  // 原先双 serve 并行让两个重型 Python 进程同机抢 CPU/RAM，使本地 OCR 由 ~1.8s
+  // 放大到 5–10×（实测冷 p95 22s、热偶发 24.8s 公式 serve 冷重载尖刺）。改为串行后
+  // 二者错峰，墙钟由「并行和之争用」降为「文本 +（可选）公式」，且公式 serve 不再与
+  // 文本 serve 同时占满 CPU，冷重载尖刺概率大幅下降。
+  //
+  // 公式路触发（保守，避免每张图都多跑一轮重型引擎还拿到垃圾 LaTeX）：
+  //   OCR_FORMULA_AUTO 且（学科/符号/中文数学词 命中，或文本为空＝疑似纯公式图）。
+  //   已知非数学学科或纯选择题（无 =/符号/数学词）跳过公式路，省 CPU；公式结果是否
+  //   采用仍过 validateLatex 护栏，避免臆造 LaTeX 污染题干。
+  const t0Text = Date.now();
   const textRes = await runLocalOcr(imagePath, { engine: TEXT_ENGINE });
   const texts = textRes.texts
     .map((t) => (t.text ?? '').trim())
     .filter((t) => t.length > 0);
   const question = texts.join('\n');
+  const textMs = Date.now() - t0Text;
 
-  // 未识别到任何文本 → 如实抛错，交由上层降级（auto）/ fail（local），不放宽判定
-  if (!question) {
-    throw new Error(`本地 OCR（${TEXT_ENGINE}）未识别到任何文本`);
-  }
+  // 公式路触发（保守，避免对整段题干误跑公式模型产出垃圾且浪费时延）
+  const triggerFormula =
+    env.OCR_FORMULA_AUTO === true &&
+    (shouldTryFormula(opts.subject, question) || question === '');
+
+  // 重负载自适应（P1-b 时延兜底）：出现以下任一即跳过公式路、牺牲 LaTeX 保时延——
+  //  ① 文本识别已超阈值：机器 CPU 被外部负载（如同机 8090 视觉模型）占满，公式几乎必超预算；
+  //  ② 公式刚超时冷却中：paddle serve 慢推理在后台仍持续吃 CPU ~13–16s，若不冷却会拖慢
+  //     后续多次请求的文本识别。冷却期内直接跳过，让其跑完释放 CPU。
+  // 轻载（文本 ~3.4s、公式 ~4s）时二者都不命中，公式正常拼入 LaTeX（保 V2 字段级准确率）。
+  const now = Date.now();
+  const skipFormula =
+    !triggerFormula || textMs > FORMULA_TEXT_SLOW_MS || now < formulaCooldownUntil;
 
   let latex: string | null = null;
-  if (env.OCR_FORMULA_AUTO && shouldTryFormula(opts.subject, question)) {
-    try {
-      const f = await runLocalOcr(imagePath, {
-        engine: 'paddle',
-        formula: true,
-      });
-      const candidate = (f.texts[0]?.text ?? '').trim();
+  if (!skipFormula) {
+    // 公式识别硬时延预算：PP-FormulaNet-S 在重负载下推理会劣化到 13–16s，直接把整条本地
+    // OCR 责任域拖过 V5 门禁。超预算即放弃 LaTeX、返回纯文本（文本 ~3.4s 不受影响），把墙钟
+    // 稳定压在「文本 + 预算」之内；并进入冷却，避免 paddle 后台慢推理污染后续请求。
+    const fRes = await withTimeout(
+      runLocalOcr(imagePath, { engine: 'paddle', formula: true }),
+      FORMULA_BUDGET_MS,
+      `formula OCR 超过预算 ${FORMULA_BUDGET_MS}ms，放弃 LaTeX 保时延`
+    ).catch((err) => {
+      console.warn(
+        `[ocr] ${err instanceof Error ? err.message : String(err)} loop_id=${
+          opts.loopId ?? '-'
+        }（进入公式冷却 ${FORMULA_COOLDOWN_MS}ms）`
+      );
+      // 关键：超时说明 paddle serve 正处于慢推理，其在后台仍会持续吃 CPU，
+      // 若不冷却会拖慢接下来多次请求的文本识别 → 设冷却窗口跳过后续公式路。
+      formulaCooldownUntil = Date.now() + FORMULA_COOLDOWN_MS;
+      return null;
+    });
+    // 仅当「学科/符号/中文数学词」命中或纯公式空文本时才采用，避免臆造 LaTeX 污染题干
+    if (fRes && (shouldTryFormula(opts.subject, question) || question === '')) {
+      const candidate = (fRes.texts[0]?.text ?? '').trim();
       if (candidate) {
         // PP-FormulaNet-S 对不含公式的图也会强行吐一段臆造 LaTeX（score 恒 1.0），
         // 故"拿到 LaTeX"不等于"该用"，必须过校验才允许拼进 question。
@@ -220,9 +293,30 @@ async function recognizeImageLocal(
           );
         }
       }
-    } catch {
-      // 公式识别失败不阻断已拿到的题干文本
     }
+  } else if (triggerFormula && textMs > FORMULA_TEXT_SLOW_MS) {
+    console.warn(
+      `[ocr] 文本识别 ${textMs}ms 已超阈值 ${FORMULA_TEXT_SLOW_MS}ms，跳过公式路保时延 loop_id=${
+        opts.loopId ?? '-'
+      }`
+    );
+  }
+
+  // 纯公式图：文本引擎（rapid）往往识别不到文字，但公式分支已拿到有效 LaTeX。
+  // 此时本地已充分捕捉题目信号，直接以「【公式】{latex}」成题并让上层 localIsSufficient
+  // 命中 MATH_STRUCT_RE 确定性跳过视觉第二路，不再因文本为空而误降级到 5GB 视觉模型
+  // （既修正了公式识别白做，又消除了视觉第二路与 OCR 同跑的机器争用）。
+  if (!question && latex) {
+    return enforceAcademicSignal({
+      ocr_status: 'success',
+      question: `【公式】${latex}`,
+      latex,
+    });
+  }
+
+  // 文本与公式均未识别到任何内容 → 如实抛错，交由上层降级（auto 走视觉 / local 走 fail）
+  if (!question) {
+    throw new Error(`本地 OCR（${TEXT_ENGINE}）未识别到任何文本`);
   }
 
   return enforceAcademicSignal({

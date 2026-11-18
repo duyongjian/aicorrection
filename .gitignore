@@ -42,6 +42,19 @@ data/distribution/
 *.cards.csv
 *.license.csv
 
+# 内部工作元数据（含 memory 日志 / 会话记录 / 本地配置）——绝不入库
+.workbuddy/
+
+# 内部白名单/清单（运行时数据，代码有 try/catch 降级，文件缺失即空列表）
+apps/api/src/data/internal_users.json
+
+# 本地运行凭证 / 一次性脚本产物
+*.pem
+*.p12
+*.pfx
+*.keystore
+*.log.*
+
 # 杂项临时产物（端口探测重定向残留、误建空文件等，非源码）
 8094
 nul

@@ -1,0 +1,30 @@
+# 依赖与构建产物（容器内重新安装 / 构建）
+node_modules
+**/node_modules
+**/dist
+
+# 版本控制与本地配置
+.git
+.gitignore
+.env
+.env.local
+.env.example
+
+# 运行时数据（SQLite / 上传）随容器生成
+data
+*.db
+*.db-shm
+*.db-wal
+apps/api/src/data
+
+# 本地杂项（Windows / 临时文件）
+8094
+nul
+.bak
+scripts/start-test.*
+reports
+docs
+
+# 部署与测试脚本（非镜像必需）
+deploy
+scripts/gen-pwa-icons.mjs

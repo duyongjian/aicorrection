@@ -209,26 +209,33 @@ def run_tesseract(img: str, formula: bool):
     return texts, wall, wall
 
 
-def run_serve() -> None:
+def run_serve(kind: str = "all") -> None:
     """常驻服务模式（P1-b）：模型只加载一次，之后每个请求复用同一进程。
 
-    启动时一次性加载 RapidOCR / PP-FormulaNet-S / Paddle 文本引擎并缓存到模块全局，
-    全部就绪后打印一行 {"ready":true,"engine":"serve"} 并 flush。
+    启动时按 kind 加载对应引擎并缓存到模块全局，全部就绪后打印一行
+    {"ready":true,"engine":"serve","kind":<kind>} 并 flush。
+      - kind="all"    ：加载 rapid + formula + paddle 文本（默认，向后兼容）
+      - kind="text"   ：仅加载 rapid（文本识别用，最轻量）
+      - kind="formula"：仅加载 paddle（文本 + PP-FormulaNet-S 公式），公式识别用
     随后循环从 stdin 读一行请求 JSON {"id"?, "engine", "image", "formula"} 直到 EOF；
     对每个请求复用缓存引擎，构建与单次模式完全相同的 payload，向 stdout 写恰好一行
     {"req":<原样回显的请求>,"payload":<payload>} 并 flush。EOF 后退出 0。
+
+    分进程加载的意义：Node 端为「文本识别」与「公式识别」各起一个常驻 serve（双进程池），
+    二者真正并行，消除原先单进程串行（rapid 跑完才跑 paddle）造成的时延叠加。
     """
     sys.stdout.reconfigure(encoding="utf-8")
     try:
-        # 一次性加载并缓存全部引擎
-        _get_rapid()
-        _get_formula()
-        _get_paddle()
+        if kind in ("all", "text"):
+            _get_rapid()
+        if kind in ("all", "formula"):
+            _get_paddle()
+            _get_formula()
     except Exception as e:  # noqa: BLE001
         print(json.dumps({"ready": False, "error": str(e)}), flush=True)
         sys.exit(1)
 
-    print(json.dumps({"ready": True, "engine": "serve"}), flush=True)
+    print(json.dumps({"ready": True, "engine": "serve", "kind": kind}), flush=True)
 
     for raw_line in sys.stdin:
         line = raw_line.strip()
@@ -281,11 +288,17 @@ def main() -> None:
     ap.add_argument("--image", default=None)
     ap.add_argument("--formula", action="store_true")
     ap.add_argument("--serve", action="store_true")
+    ap.add_argument(
+        "--serve-kind",
+        choices=["all", "text", "formula"],
+        default="all",
+        help="常驻 serve 仅加载的引擎子集：all=全量(默认), text=仅 rapid, formula=仅 paddle(文本+公式)",
+    )
     args = ap.parse_args()
 
     # 服务模式：模型只加载一次，常驻进程处理所有请求（见 run_serve）
     if args.serve:
-        run_serve()
+        run_serve(args.serve_kind)
         return
 
     if not args.image:

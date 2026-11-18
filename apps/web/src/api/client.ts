@@ -78,8 +78,18 @@ import type {
  */
 const REQUEST_TIMEOUT_MS = 960_000;
 
+/**
+ * 后端来源：默认同源（开发态 Vite 代理到 :3001 / 生产态同域 Express 托管）。
+ * 部署到 Netlify 等纯静态托管时，通过构建环境变量 VITE_API_ORIGIN 指向真实后端
+ * （如 Hugging Face Spaces / Railway 地址），PWA 直接以 CORS 调用后端，
+ * 规避 Netlify Functions 10s 超时对长耗时归因的限制。
+ * 例：VITE_API_ORIGIN=https://aicorrection.hf.space
+ */
+const API_ORIGIN = (import.meta.env.VITE_API_ORIGIN ?? '').replace(/\/$/, '');
+const BASE_URL = API_ORIGIN ? `${API_ORIGIN}/api/v1` : '/api/v1';
+
 const http = axios.create({
-  baseURL: '/api/v1',
+  baseURL: BASE_URL,
   timeout: REQUEST_TIMEOUT_MS,
 });
 

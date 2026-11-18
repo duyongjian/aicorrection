@@ -1,0 +1,6 @@
+# 本地 OCR 子进程依赖（RapidOCR，纯 CPU，免费）
+# rapidocr-onnxruntime 会连带安装 opencv-python-headless / pyclipper / shapely / onnxruntime
+rapidocr-onnxruntime
+pillow
+numpy
+onnxruntime

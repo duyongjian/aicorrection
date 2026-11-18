@@ -4,7 +4,7 @@
  */
 import { Router } from 'express';
 import { z } from 'zod';
-import { generateAttribution } from '../services/attribution/attributionService';
+import { generateAttribution } from '../services/attribution/attributionOrchestrator';
 import { listAttributionsByUser } from '../models/attributionModel';
 import { getLoopDetail } from '../models/loopDetailModel';
 import { HttpError } from '../middleware/errorHandler';

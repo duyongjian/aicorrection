@@ -1,0 +1,31 @@
+# Netlify 部署配置（配方 1：纯静态 PWA）
+#
+# 推荐架构：Netlify 只托管编译后的前端 PWA（apps/web/dist），
+# PWA 通过构建变量 VITE_API_ORIGIN 直连后端（Hugging Face Spaces / Railway），
+# 后端以 CORS 响应。这样可规避 Netlify Functions 免费档 10s 超时对长耗时归因的限制。
+#
+# 下方 [[redirects]] 为「可选」同源代理：若你想让 PWA 走 /api/v1 同源路径
+# （例如不方便配 CORS），可取消注释，并用 Netlify 环境变量 BACKEND_ORIGIN 指向后端。
+# 但注意：免费档函数 10s 超时，归因若 >10s 会失败 —— 生产建议用上面的 VITE_API_ORIGIN 直连。
+
+[build]
+  command = "npm install && npm run build -w @aicorrection/web"
+  publish = "apps/web/dist"
+  functions = "netlify/functions"
+
+[build.environment]
+  NODE_VERSION = "20"
+  # 改成你的后端地址（含 https），如 https://aicorrection.hf.space
+  # 留空则 PWA 走同源（仅当你同时用下方 redirect 把 /api 代理到后端时才有效）。
+  VITE_API_ORIGIN = ""
+
+# [[redirects]]
+#   from = "/api/v1/*"
+#   to = "/.netlify/functions/api/:splat"
+#   status = 200
+#   force = true
+
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"

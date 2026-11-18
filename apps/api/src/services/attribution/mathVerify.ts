@@ -201,6 +201,7 @@ function evalNode(n: Node, scope: Record<string, number>): number {
     case 'var': {
       if (n.name === 'pi') return Math.PI;
       if (n.name === 'e') return Math.E;
+      if (n.name === 'inf') return Infinity;
       const v = scope[n.name];
       if (v === undefined) throw new Error(`未提供变量 ${n.name}`);
       return v;
@@ -255,6 +256,14 @@ export function normalizeMath(s: string): string {
   t = t.replace(/e\^([a-zA-Z0-9_.]+)/g, 'exp($1)');
   t = t.replace(/[−–—]/g, '-'); // 各种 dash → ASCII 减号
   t = t.replace(/\s+/g, '');
+  // 函数名后紧跟变量/数字（无括号）时补全为函数调用 cos x → cos(x)，
+  // 否则 "cos*x" 会被当乘法、cos 被当未定义变量导致编译失败。
+  // 负向回顾排除被包在其它单词里的同名片段（如 arcsin 中的 sin）。
+  t = t.replace(/(?<![a-zA-Z])(sin|cos|tan|cot|sec|csc|exp|ln|log|sqrt|abs)\s*([a-zA-Z]|[0-9.]+)/gi, '$1($2)');
+  t = t.replace(/\\pi/gi, 'pi'); // LaTeX \pi → pi（与 π 字符统一）
+  t = t.replace(/π/g, 'pi');
+  t = t.replace(/\\infty/gi, 'inf'); // 无穷 ∞ → inf 常量（避免选项含 ∞ 时编译失败）
+  t = t.replace(/∞/g, 'inf');
   // 分词后：先把"非函数名 / 非特殊 token"的多字母标识符拆成单字母
   // （如 az → a,z；否则 [a-zA-Z]+ 会把它当成单个变量），再按邻接规则插入显式 *
   const toks = expandTokens(tokenize(t));
@@ -381,7 +390,8 @@ export interface VerifyOutput {
  */
 export function verifyWithEquation(
   equation: string,
-  options: { letter: string; relation: string }[]
+  options: { letter: string; relation: string }[],
+  targetDeriv?: 'dzdx' | 'dzdy' | null
 ): VerifyOutput {
   let F: CompiledExpr;
   try {
@@ -397,22 +407,30 @@ export function verifyWithEquation(
     return { kind: 'unknown', reason: `方程编译失败: ${(e as Error).message}` };
   }
 
-  // 编译各选项关系 LHS - RHS（无 = 视为整体与 0 比较）
-  const comps: { letter: string; fn: CompiledExpr; hasEq: boolean }[] = [];
+  // 编译各选项：两类题型统一处理
+  //  - 等式型选项（如 "dzdx - dzdy = 1/a"）：检验恒等式 LHS - RHS ≈ 0 是否恒成立；
+  //  - 表达式型选项（如 "-x/z"，即所求偏导本身）：其数值应等于数值求得的 dzdx / dzdy。
+  const comps: { letter: string; fn: CompiledExpr; kind: 'eq' | 'expr' }[] = [];
   for (const o of options) {
     try {
       const idx = o.relation.indexOf('=');
-      const lhs = idx >= 0 ? o.relation.slice(0, idx) : o.relation;
-      const rhs = idx >= 0 ? o.relation.slice(idx + 1) : '0';
-      const L = compileExpr(lhs);
-      const R = compileExpr(rhs);
-      comps.push({ letter: o.letter, fn: (s) => L(s) - R(s), hasEq: idx >= 0 });
+      if (idx >= 0) {
+        const L = compileExpr(o.relation.slice(0, idx));
+        const R = compileExpr(o.relation.slice(idx + 1));
+        comps.push({ letter: o.letter, fn: (s) => L(s) - R(s), kind: 'eq' });
+      } else if (targetDeriv) {
+        const E = compileExpr(o.relation);
+        comps.push({
+          letter: o.letter,
+          fn: (s) => E(s) - (s[targetDeriv] ?? NaN),
+          kind: 'expr',
+        });
+      }
     } catch {
       // 该选项无法解析 → 跳过（不参与判定）
     }
   }
-  const usable = comps.filter((c) => c.hasEq);
-  if (usable.length < 2) return { kind: 'unknown', reason: '可解析选项不足' };
+  if (comps.length < 2) return { kind: 'unknown', reason: '可解析选项不足' };
 
   const N = 60;
   const residuals: Record<string, number> = {};
@@ -492,7 +510,25 @@ export function verifyImplicitDifferentiation(question: string): VerifyOutput {
   const opts: ParsedOption[] = parseOptionsLocal(question);
   if (opts.length < 2) return { kind: 'unknown', reason: '选项不足' };
   const optInputs = opts.map((o) => ({ letter: o.letter, relation: stripMarker(o.body) }));
-  const result = verifyWithEquation(equation, optInputs);
+  // 判定题干所求：∂z/∂x 还是 ∂z/∂y（用于"表达式型"选项比对其数值是否等于所求导数值）。
+  // 等式型选项（如 dzdx-dzdy=1/a）无需此信息。选项若不含 ∂z/∂x 这类记号（如 -x/z），
+  // 仅在题干明确出现时才设定 target，避免误判。
+  const targetDeriv: 'dzdx' | 'dzdy' | null = (() => {
+    if (
+      /\\?partial\s+z\s*\}\s*\{\s*\\?partial\s+x|\\?partial\s+z\s*\/\s*\\?partial\s+x|∂\s*z\s*\/\s*∂\s*x/.test(
+        question
+      )
+    )
+      return 'dzdx';
+    if (
+      /\\?partial\s+z\s*\}\s*\{\s*\\?partial\s+y|\\?partial\s+z\s*\/\s*\\?partial\s+y|∂\s*z\s*\/\s*∂\s*y/.test(
+        question
+      )
+    )
+      return 'dzdy';
+    return null;
+  })();
+  const result = verifyWithEquation(equation, optInputs, targetDeriv);
   if (result.kind === 'verified' && result.correctLetter) {
     const hit = opts.find((o) => o.letter === result.correctLetter);
     if (hit) result.correctOptionText = hit.body;
@@ -550,4 +586,271 @@ function extractEquationClause(prefix: string): string | null {
     }
   }
   return prefix.slice(left, right).trim();
+}
+
+// ───────────────────────────── 通用数值匹配辅助 ─────────────────────────────
+
+/** 安全求值：抛错或非有限返回 NaN（不污染匹配）。 */
+function safeEval(fn: CompiledExpr, scope: Record<string, number>): number {
+  try {
+    const v = fn(scope);
+    return typeof v === 'number' && isFinite(v) ? v : NaN;
+  } catch {
+    return NaN;
+  }
+}
+
+/** π → pi（与 normalizeMath 的 π 替换保持一致，供独立编译选项/上下限用）。 */
+function replacePi(s: string): string {
+  return (s ?? '').replace(/\\pi/gi, 'pi').replace(/π/g, 'pi');
+}
+
+/** 复合辛普森积分（定步长）。任一采样点非有限即返回 NaN。 */
+function simpson(fn: CompiledExpr, a: number, b: number, n: number): number {
+  const nn = n % 2 === 0 ? n : n + 1;
+  const h = (b - a) / nn;
+  let s = safeEval(fn, { x: a }) + safeEval(fn, { x: b });
+  if (!isFinite(s)) return NaN;
+  for (let i = 1; i < nn; i++) {
+    const y = safeEval(fn, { x: a + i * h });
+    if (!isFinite(y)) return NaN;
+    s += (i % 2 === 0 ? 2 : 4) * y;
+  }
+  return (h / 3) * s;
+}
+
+/**
+ * 把题干选项编译为数值，与真值 V 比对，挑出残差最小且与次小明显分离的选项。
+ * 适用于极限 / 定积分（选项为数值或含 π/ln 等常量）。
+ */
+function matchNumericOptions(question: string, V: number): VerifyOutput {
+  const opts = parseOptionsLocal(question);
+  if (opts.length < 2) return { kind: 'unknown', reason: '选项不足' };
+  const residuals: Record<string, number> = {};
+  const comps: { letter: string; r: number }[] = [];
+  for (const o of opts) {
+    const body = stripMarker(o.body);
+    let val: number | null = null;
+    try {
+      val = compileExpr(body.replace(/π/g, 'pi'))({});
+    } catch {
+      val = null;
+    }
+    const r = val === null ? Infinity : Math.abs(val - V);
+    residuals[o.letter] = r;
+    if (val !== null) comps.push({ letter: o.letter, r });
+  }
+  if (comps.length < 2) return { kind: 'unknown', reason: '可解析数值选项不足' };
+  comps.sort((p, q) => p.r - q.r);
+  const best = comps[0];
+  const second = comps[1];
+  const sep = second.r - best.r;
+  if (best.r < 1e-2 && sep > 0.05) {
+    const hit = opts.find((o) => o.letter === best.letter);
+    return {
+      kind: 'verified',
+      correctLetter: best.letter,
+      correctOptionText: hit?.body,
+      residuals,
+      reason: `数值真值 ${V.toFixed(4)}，最优残差 ${best.r.toExponential(2)}`,
+    };
+  }
+  return {
+    kind: 'unknown',
+    reason: `数值选项区分度不足 (best=${best.r.toExponential(2)}, sep=${sep.toExponential(2)})`,
+    residuals,
+  };
+}
+
+/** 级数选项匹配：先按"收敛/发散"文本判定，否则按数值和匹配。 */
+function matchSeriesOptions(
+  question: string,
+  converges: boolean,
+  V: number
+): VerifyOutput {
+  const opts = parseOptionsLocal(question);
+  if (opts.length < 2) return { kind: 'unknown', reason: '选项不足' };
+  const residuals: Record<string, number> = {};
+  for (const o of opts) {
+    const b = o.body.replace(/^[\(（]\s*[A-Ea-e]\s*[\)）]\s*/, '');
+    const isConv = /收敛/.test(b);
+    const isDiv = /发散/.test(b);
+    if ((converges && isConv) || (!converges && isDiv)) {
+      return { kind: 'verified', correctLetter: o.letter, correctOptionText: o.body, residuals };
+    }
+    try {
+      const val = compileExpr(b.replace(/π/g, 'pi'))({});
+      residuals[o.letter] = isFinite(val) ? Math.abs(val - V) : Infinity;
+    } catch {
+      residuals[o.letter] = Infinity;
+    }
+  }
+  const comps = opts
+    .map((o) => ({ letter: o.letter, r: residuals[o.letter] }))
+    .filter((c) => isFinite(c.r));
+  if (comps.length >= 2) {
+    comps.sort((p, q) => p.r - q.r);
+    if (comps[0].r < 1e-2 && comps[1].r - comps[0].r > 0.05) {
+      const hit = opts.find((o) => o.letter === comps[0].letter);
+      return {
+        kind: 'verified',
+        correctLetter: comps[0].letter,
+        correctOptionText: hit?.body,
+        residuals,
+      };
+    }
+  }
+  return { kind: 'unknown', reason: '级数选项未匹配（收敛性或数值不符）', residuals };
+}
+
+/**
+ * 极限数值验证：解析 lim 表达式与趋向点，双侧/无穷采样求极限值，再与数值选项比对。
+ * 仅在能稳定求出有限极限时返回 verified；否则 unknown 不干预。
+ */
+export function verifyLimit(question: string): VerifyOutput {
+  const limMatch = question.match(/\\?lim(?:_\s*\{?([^}]*)\}?)?/i);
+  if (!limMatch) return { kind: 'unknown', reason: '未找到极限表达式' };
+  const subscript = limMatch[1] ?? '';
+  const varMatch = subscript.match(/([a-zA-Z])/);
+  const vname = varMatch ? varMatch[1].toLowerCase() : 'x';
+  const isInfinite = /∞|\\infty/i.test(subscript);
+  let point: number | null = null;
+  if (!isInfinite) {
+    const pm = subscript.match(/[-+]?\d*\.?\d+/);
+    if (pm) point = parseFloat(pm[0]);
+  }
+  const after = question.slice(limMatch.index! + limMatch[0].length);
+  const exprEnd = after.search(/[。！？；\n]/);
+  let exprRaw = exprEnd >= 0 ? after.slice(0, exprEnd) : after;
+  exprRaw = exprRaw.replace(/\\?lim/gi, '');
+  // 截掉"答案空 / 选项"等尾部噪声：遇到答案空 "( )"、选项字母 "(A)" 或等号填空 "= (" 即止，
+  // 避免把选项文当表达式编译（compileExpr 内部 normalizeMath 负责处理 \frac / \pi）。
+  const cutIdx = exprRaw.search(/[=＝]\s*\(|\(?\s*[A-Ea-e]\s*[\)）]|（\s*[A-Ea-e]\s*）|\(\s*\)/);
+  if (cutIdx >= 0) exprRaw = exprRaw.slice(0, cutIdx);
+  exprRaw = exprRaw.trim();
+  let compiled: CompiledExpr;
+  try {
+    compiled = compileExpr(exprRaw);
+  } catch {
+    return { kind: 'unknown', reason: '极限表达式编译失败' };
+  }
+  let V: number | null = null;
+  if (isInfinite) {
+    const vals = [1e4, 1e5, 1e6].map((n) => safeEval(compiled, { [vname]: n }));
+    if (vals.some((v) => !isFinite(v))) return { kind: 'unknown', reason: '无穷极限采样非有限' };
+    if (Math.abs(vals[2] - vals[1]) < 1e-3 && Math.abs(vals[1] - vals[0]) < 1e-2) V = vals[2];
+    else return { kind: 'unknown', reason: '无穷极限未收敛' };
+  } else if (point !== null) {
+    const d = 1e-4;
+    const vp = safeEval(compiled, { [vname]: point + d });
+    const vm = safeEval(compiled, { [vname]: point - d });
+    if (!isFinite(vp) || !isFinite(vm)) return { kind: 'unknown', reason: '极限采样非有限' };
+    if (Math.abs(vp - vm) < 1e-6) V = (vp + vm) / 2;
+    else return { kind: 'unknown', reason: '双侧极限不一致（极限不存在）' };
+  } else {
+    return { kind: 'unknown', reason: '未能解析趋向点' };
+  }
+  return matchNumericOptions(question, V as number);
+}
+
+/**
+ * 定积分数值验证：解析上下限与被积表达式，复合辛普森求积，再与数值选项比对。
+ */
+export function verifyIntegral(question: string): VerifyOutput {
+  const bnd = question.match(
+    /\\int\s*_\s*\{?(\\?pi|[0-9e\.\-]+)\}?\s*\^\s*\{?(\\?pi|[0-9e\.\-]+)\}?/i
+  );
+  if (!bnd) return { kind: 'unknown', reason: '未解析积分上下限' };
+  let a: number, b: number;
+  try {
+    a = compileExpr(replacePi(bnd[1]))({});
+    b = compileExpr(replacePi(bnd[2]))({});
+  } catch {
+    return { kind: 'unknown', reason: '积分上下限编译失败' };
+  }
+  if (!isFinite(a) || !isFinite(b)) return { kind: 'unknown', reason: '积分上下限非有限' };
+  const after = question.slice(bnd.index! + bnd[0].length);
+  const dxMatch = after.match(/([\s\S]*?)\\?,?\s*d\s*x/i);
+  if (!dxMatch) return { kind: 'unknown', reason: '未找到被积表达式或 dx' };
+  let integrandRaw = dxMatch[1].trim();
+  let compiled: CompiledExpr;
+  try {
+    compiled = compileExpr(integrandRaw);
+  } catch {
+    return { kind: 'unknown', reason: '被积表达式编译失败' };
+  }
+  const V = simpson(compiled, a, b, 2000);
+  if (!isFinite(V)) return { kind: 'unknown', reason: '积分数值非有限' };
+  return matchNumericOptions(question, V);
+}
+
+/**
+ * 级数敛散性验证：解析通项，数值累加部分和判定收敛/发散，再与选项（收敛/发散 或 和值）比对。
+ * 启发式：比较 S_N 与 S_{N/2} 的增量——增量不趋于 0 即判定发散；否则收敛，和值取 S_N。
+ */
+export function verifySeries(question: string): VerifyOutput {
+  const sm = question.match(/\\sum\s*_\s*\{?([^}]*)\}?\s*\^\s*\{?([^}]*)\}?/i);
+  if (!sm) return { kind: 'unknown', reason: '未解析级数下标' };
+  const lowerM = (sm[1] ?? '').match(/=\s*(\d+)/);
+  const startN = lowerM ? parseInt(lowerM[1], 10) : 1;
+  const after = question.slice(sm.index! + sm[0].length);
+  const exprEnd = after.search(/[。！？；\n]/);
+  let termRaw = exprEnd >= 0 ? after.slice(0, exprEnd) : after;
+  termRaw = termRaw.replace(/\\sum/gi, '');
+  // 截掉"答案空 / 选项"等尾部噪声（同极限处理），避免把选项文当通项编译
+  const cutS = termRaw.search(/[=＝]\s*\(|\(?\s*[A-Ea-e]\s*[\)）]|（\s*[A-Ea-e]\s*）/);
+  if (cutS >= 0) termRaw = termRaw.slice(0, cutS);
+  termRaw = termRaw.trim();
+  let compiled: CompiledExpr;
+  try {
+    compiled = compileExpr(termRaw);
+  } catch {
+    return { kind: 'unknown', reason: '级数通项编译失败' };
+  }
+  const N = 200000;
+  const partial = (upto: number): { S: number; last: number } => {
+    let S = 0;
+    let last = 0;
+    for (let n = startN; n <= upto; n++) {
+      const a = safeEval(compiled, { n });
+      if (!isFinite(a)) return { S: NaN, last: NaN };
+      S += a;
+      last = a;
+    }
+    return { S, last };
+  };
+  const full = partial(N);
+  if (!isFinite(full.S)) return { kind: 'unknown', reason: '通项非有限' };
+  if (Math.abs(full.last) > 1e-2) {
+    return matchSeriesOptions(question, false, NaN); // 第 N 项不趋于 0 → 发散（必要条件）
+  }
+  const half = partial(Math.floor(N / 2));
+  if (!isFinite(half.S)) return { kind: 'unknown', reason: '部分和半段非有限' };
+  if (Math.abs(full.S - half.S) < 1e-2) {
+    return matchSeriesOptions(question, true, full.S);
+  }
+  return matchSeriesOptions(question, false, NaN);
+}
+
+/**
+ * 统一分发：隐函数求导（含 z 的等式，最高特异度，优先）→ 极限 → 定积分 → 级数。
+ * 仅在能稳定验证时返回 verified；否则 unknown（不干预、不误杀）。
+ * 供诊断 / 讲解两种模式共用，作为"模型无关正确选项"的硬校验。
+ */
+export function verifyAnswer(question: string): VerifyOutput {
+  const imp = verifyImplicitDifferentiation(question);
+  if (imp.kind === 'verified') return imp;
+  if (/\\?lim|极限|趋向|趋于/i.test(question)) {
+    const r = verifyLimit(question);
+    if (r.kind === 'verified') return r;
+  }
+  if (/\\int|积分|定积分/i.test(question)) {
+    const r = verifyIntegral(question);
+    if (r.kind === 'verified') return r;
+  }
+  if (/\\sum|级数|敛散|收敛|发散|求和/i.test(question)) {
+    const r = verifySeries(question);
+    if (r.kind === 'verified') return r;
+  }
+  return { kind: 'unknown', reason: '非可验证题型或解析失败' };
 }
