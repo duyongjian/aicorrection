@@ -12,7 +12,7 @@
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.x-3178C6?logo=typescript&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-5-646CFF?logo=vite&logoColor=white)
 ![Tests](https://img.shields.io/badge/tests-19%20suites-brightgreen)
-![License](https://img.shields.io/badge/license-UNLICENSED-lightgrey)
+![License](https://img.shields.io/badge/license-PolyForm%20NC%201.0.0-blueviolet)
 
 [快速开始](#-快速开始) · [功能](#-核心功能) · [架构](#-架构) · [部署](#-免费部署) · [模型验收](#-模型验收与honesty) · [文档](#-文档索引)
 
@@ -147,6 +147,14 @@ NO_PROXY='*' JSON=<report.json> npm run attrib:regress:real # 归因质量回归
 
 **部署**
 - [免费部署双配方](deploy/README.md) · [Hugging Face Spaces](deploy/huggingface/README.md)
+
+---
+
+## 📄 许可
+
+本项目采用 **[PolyForm Noncommercial License 1.0.0](LICENSE)** —— 允许任何**非商业目的**的使用、修改与分发（含个人研究/实验/测试、慈善/教育/公共研究/公共安全健康/环保/政府机构使用），**不允许商业使用**。完整条款见 [`LICENSE`](LICENSE)。
+
+> 如需商业授权，请联系仓库所有者另行协商。
 
 ---
 
